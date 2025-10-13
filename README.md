@@ -58,8 +58,14 @@ cp .env.local.example .env.local
 
 Edit `.env.local` and add your API keys:
 ```
+# Transit data (optional)
 TRANSIT_API_KEY=your_511_api_key_here
+
+# Weather data (optional)
 WEATHER_API_KEY=your_openweathermap_api_key_here
+
+# Event crowding alerts (optional - but recommended!)
+TICKETMASTER_API_KEY=your_consumer_key_here
 ```
 
 4. Run the development server:
@@ -116,6 +122,22 @@ The app works with **mock data** out of the box. To enable real-time data:
 3. Add to `.env.local` as `SEATGEEK_CLIENT_ID` and `SEATGEEK_CLIENT_SECRET`
 
 See [app/api/events/route.ts](app/api/events/route.ts) for detailed implementation examples for each API.
+
+### Quick Start: Get Your Ticketmaster API Key
+
+The fastest way to enable event crowding alerts:
+
+1. Go to [https://developer.ticketmaster.com/](https://developer.ticketmaster.com/)
+2. Click "Get Your API Key" or "Sign Up"
+3. Create a free account
+4. You'll instantly receive your **Consumer Key** (no waiting for approval!)
+5. Copy the **Consumer Key** (NOT the Consumer Secret)
+6. Add to your `.env.local` file:
+   ```
+   TICKETMASTER_API_KEY=your_consumer_key_here
+   ```
+7. Restart your development server: `npm run dev`
+8. Events will now appear automatically! 🎉
 
 ## Project Structure
 
