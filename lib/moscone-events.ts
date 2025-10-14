@@ -46,12 +46,26 @@ export function getMosconeEventsForDate(date: Date): VenueEvent[] {
 
   for (const mosconeEvent of knownMosconeEvents) {
     if (dateStr >= mosconeEvent.startDate && dateStr <= mosconeEvent.endDate) {
-      // Create event with morning (8 AM) and evening (6 PM) times
+      // Create event with morning (8 AM) and evening (6 PM) times in Pacific Time
       // Conventions typically run all day
-      const eventStart = new Date(date);
-      eventStart.setHours(8, 0, 0, 0);
-      const eventEnd = new Date(date);
-      eventEnd.setHours(18, 0, 0, 0);
+      // We need to create dates explicitly in Pacific Time to avoid timezone issues
+
+      // Extract year, month, day from the date string
+      const [year, month, day] = dateStr.split('-').map(Number);
+
+      // Create dates in Pacific Time by using ISO string with Pacific offset
+      // Determine if we're in PDT (-07:00) or PST (-08:00)
+      const testDate = new Date(Date.UTC(year, month - 1, day, 12, 0, 0));
+      const pacificTestStr = testDate.toLocaleString('en-US', {
+        timeZone: 'America/Los_Angeles',
+        timeZoneName: 'short'
+      });
+      const isPDT = pacificTestStr.includes('PDT');
+      const tzOffset = isPDT ? '-07:00' : '-08:00';
+
+      // Create ISO strings with explicit Pacific timezone
+      const eventStart = new Date(`${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}T08:00:00${tzOffset}`);
+      const eventEnd = new Date(`${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}T18:00:00${tzOffset}`);
 
       events.push({
         id: `moscone-${mosconeEvent.name.toLowerCase().replace(/\s+/g, '-')}-${dateStr}`,
