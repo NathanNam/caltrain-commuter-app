@@ -29,6 +29,7 @@ export async function GET(request: NextRequest) {
 
   // Get GTFS scheduled trains (uses local files if no API key)
   let trains: Train[] = [];
+  let usingMockSchedule = false;
 
   try {
     trains = await getScheduledTrains(origin, destination);
@@ -44,6 +45,7 @@ export async function GET(request: NextRequest) {
   if (trains.length === 0) {
     console.warn('GTFS schedule unavailable, using fallback mock data');
     trains = generateMockTrains(origin, destination);
+    usingMockSchedule = true;
   } else {
     console.log(`Using ${trains.length} real GTFS trains`);
   }
@@ -87,7 +89,8 @@ export async function GET(request: NextRequest) {
 
   return NextResponse.json({
     trains,
-    isMockData: !hasRealDelays // Flag to indicate mock delay data
+    isMockData: !hasRealDelays, // Flag to indicate mock delay data
+    isMockSchedule: usingMockSchedule // Flag to indicate mock schedule data
   }, {
     headers: {
       'Cache-Control': 'public, s-maxage=30, stale-while-revalidate=60'

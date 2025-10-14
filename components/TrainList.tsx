@@ -15,6 +15,7 @@ export default function TrainList({ originId, destinationId }: TrainListProps) {
   const [error, setError] = useState<string | null>(null);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [isMockData, setIsMockData] = useState(false);
+  const [isMockSchedule, setIsMockSchedule] = useState(false);
 
   useEffect(() => {
     if (!originId || !destinationId) {
@@ -38,6 +39,7 @@ export default function TrainList({ originId, destinationId }: TrainListProps) {
         const data = await response.json();
         setTrains(data.trains || []);
         setIsMockData(data.isMockData || false);
+        setIsMockSchedule(data.isMockSchedule || false);
         setLastUpdated(new Date());
       } catch (err) {
         setError(err instanceof Error ? err.message : 'An error occurred');
@@ -101,7 +103,7 @@ export default function TrainList({ originId, destinationId }: TrainListProps) {
       <div className="flex justify-between items-center mb-4">
         <div className="flex items-center gap-2">
           <h2 className="text-xl font-bold text-gray-800">Next Trains</h2>
-          {isMockData && (
+          {(isMockData || isMockSchedule) && (
             <span className="text-xs bg-yellow-100 text-yellow-800 px-2 py-1 rounded font-semibold">
               DEMO MODE
             </span>
@@ -114,7 +116,18 @@ export default function TrainList({ originId, destinationId }: TrainListProps) {
         )}
       </div>
 
-      {isMockData && (
+      {isMockSchedule && (
+        <div className="mb-4 bg-red-50 border-l-4 border-red-500 p-3">
+          <p className="text-sm text-red-800 font-semibold">
+            ⚠️ Mock Schedule Data
+          </p>
+          <p className="text-xs text-red-700 mt-1">
+            Unable to load real train schedule. The trains and times shown below are simulated for demonstration purposes only.
+          </p>
+        </div>
+      )}
+
+      {isMockData && !isMockSchedule && (
         <div className="mb-4 bg-yellow-50 border-l-4 border-yellow-400 p-3">
           <p className="text-xs text-yellow-800">
             <strong>Demo delays shown.</strong> Configure TRANSIT_API_KEY for real-time train delays.

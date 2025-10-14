@@ -2,7 +2,7 @@
 // Fetches and parses GTFS static data from 511.org API
 
 import { Train } from './types';
-import { getStationById } from './stations';
+import { getStationById, stations } from './stations';
 
 interface GTFSStopTime {
   trip_id: string;
@@ -291,38 +291,53 @@ function findGTFSStopId(stationCode: string, directionId: string): string {
     'BAYSHORE': '7003',
     'SSF': '7004',  // South San Francisco
     'SB': '7005',   // San Bruno
+    'MB': '7006',   // Millbrae
     'MILLBRAE': '7006',
-    'BROADWAY': '7007',  // Burlingame
-    'BURLINGAME': '7007',
+    'BROADWAY': '7007',  // Broadway (Burlingame)
+    'BURLINGAME': '7008',
     'SM': '7009',   // San Mateo
-    'HAYWARD': '7008',  // Hayward Park
-    'HILLSDALE': '7010',
-    'BELMONT': '7011',
-    'SAN CARLOS': '7012',
-    'REDWOOD': '7013',  // Redwood City
-    'ATHERTON': '7014',
-    'MENLO': '7015',  // Menlo Park
-    'PALO ALTO': '7016',
-    'CALIFORNIA': '7017',  // California Ave
-    'SAN ANTONIO': '7018',
-    'MOUNTAIN VIEW': '7019',
-    'SUNNYVALE': '7020',
-    'LAWRENCE': '7021',
-    'SANTA CLARA': '7022',
-    'COLLEGE PARK': '7023',
-    'DIRIDON': '7024',  // San Jose Diridon
-    'TAMIEN': '7025',
-    'CAPITOL': '7026',
-    'BLOSSOM HILL': '7027',
-    'MORGAN HILL': '7028',
-    'SAN MARTIN': '7029',
-    'GILROY': '7030'
+    'HAYWARD': '7010',  // Hayward Park
+    'HILLSDALE': '7011',
+    'BELMONT': '7012',
+    'SC': '7013',   // San Carlos
+    'SAN CARLOS': '7013',
+    'RW': '7014',   // Redwood City
+    'REDWOOD': '7014',
+    'MP': '7016',   // Menlo Park
+    'MENLO': '7016',
+    'PA': '7017',   // Palo Alto
+    'PALO ALTO': '7017',
+    'STANFORD': '253774', // Stanford (special ID)
+    'CALAVEUE': '7019', // California Ave
+    'CALIFORNIA': '7019',
+    'SAN ANTONIO': '7020',
+    'MV': '7021',   // Mountain View
+    'MOUNTAIN VIEW': '7021',
+    'SUNNYVALE': '7022',
+    'LAWRENCE': '7023',
+    'SANTA CLARA': '7024',
+    'COLLEGE PARK': '7025',
+    'SJ': '7026',   // San Jose Diridon
+    'DIRIDON': '7026',
+    'TAMIEN': '7027',
+    'CAPITOL': '7028',
+    'BH': '7029',   // Blossom Hill
+    'BLOSSOM HILL': '7029',
+    'MH': '7030',   // Morgan Hill
+    'MORGAN HILL': '7030',
+    'SAN MARTIN': '7031',
+    'GILROY': '7032'
   };
 
   const baseCode = codeMapping[stationCode.toUpperCase()];
   if (!baseCode) {
     console.warn(`No GTFS mapping found for station code: ${stationCode}`);
     return `${stationCode}${directionId === '0' ? '1' : '2'}`; // Fallback to old format
+  }
+
+  // Stanford has a special ID format
+  if (baseCode === '253774') {
+    return directionId === '0' ? '2537740' : '2537744';
   }
 
   // Append direction: 1 for Northbound (direction_id='0'), 2 for Southbound (direction_id='1')
@@ -369,9 +384,16 @@ export async function getScheduledTrains(
   const activeTrips = gtfsCache.trips.filter((trip) => trip.service_id === serviceId);
   console.log(`Found ${activeTrips.length} active trips for service ${serviceId}`);
 
-  // Determine direction based on station order
-  const isNorthbound = originStationId > destinationStationId;
+  // Determine direction based on actual station geographic order
+  // Stations array is ordered north to south, so we can use array indices
+  const originIndex = stations.findIndex(s => s.id === originStationId);
+  const destIndex = stations.findIndex(s => s.id === destinationStationId);
+
+  // If origin is before destination in the array, we're going south (higher index)
+  const isNorthbound = originIndex > destIndex;
   const directionId = isNorthbound ? '0' : '1'; // 0 = Northbound, 1 = Southbound
+
+  console.log(`Direction: ${originStation.name} (index ${originIndex}) -> ${destinationStation.name} (index ${destIndex}) = ${isNorthbound ? 'Northbound' : 'Southbound'} (direction_id=${directionId})`);
 
   // Map station codes to GTFS stop IDs
   // GTFS uses numeric stop IDs: 7001X format where X is 1 (NB) or 2 (SB)
