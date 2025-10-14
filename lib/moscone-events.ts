@@ -2,6 +2,9 @@
 // Source: https://www.moscone.com/events
 // This file tracks major conventions and conferences at Moscone Center
 // that significantly impact Caltrain ridership but may not be on Ticketmaster
+//
+// ⚠️ Last updated: 2025-10-14
+// To update this file, run: node scripts/update-moscone-events.mjs
 
 import { VenueEvent } from './types';
 
@@ -15,26 +18,46 @@ export interface MosconeEvent {
 }
 
 // Known major Moscone Center events
-// Update this list periodically from https://www.moscone.com/events
+// Update this list periodically by running: node scripts/update-moscone-events.mjs
 export const knownMosconeEvents: MosconeEvent[] = [
   {
     name: 'Dreamforce 2025',
-    startDate: '2025-10-13',
-    endDate: '2025-10-17',
+    startDate: '2025-10-14',
+    endDate: '2025-10-16',
     description: 'Salesforce annual conference - one of the largest tech conferences',
     estimatedAttendance: 170000,
     crowdLevel: 'high'
   },
-  // Add more events here as they are announced
-  // Example format:
-  // {
-  //   name: 'Oracle OpenWorld',
-  //   startDate: '2025-09-22',
-  //   endDate: '2025-09-25',
-  //   description: 'Oracle\'s annual conference',
-  //   estimatedAttendance: 60000,
-  //   crowdLevel: 'high'
-  // },
+  {
+    name: 'PyTorch Conference 2025',
+    startDate: '2025-10-21',
+    endDate: '2025-10-23',
+    estimatedAttendance: 30000,
+    crowdLevel: 'moderate'
+  },
+  {
+    name: 'TCT Annual Conference 2025',
+    startDate: '2025-10-25',
+    endDate: '2025-10-28',
+    estimatedAttendance: 25000,
+    crowdLevel: 'moderate'
+  },
+  {
+    name: 'TechCrunch Disrupt 2025',
+    startDate: '2025-10-27',
+    endDate: '2025-10-29',
+    description: 'TechCrunch startup conference',
+    estimatedAttendance: 80000,
+    crowdLevel: 'high'
+  },
+  {
+    name: 'Microsoft Ignite 2025',
+    startDate: '2025-11-17',
+    endDate: '2025-11-21',
+    description: 'Microsoft annual conference',
+    estimatedAttendance: 150000,
+    crowdLevel: 'high'
+  }
 ];
 
 /**

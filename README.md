@@ -24,12 +24,12 @@ The live demo is fully functional with real-time features enabled!
 
 ## Overview
 
-This app provides comprehensive real-time information for Caltrain commuters across all 32 stations from San Francisco to Gilroy. Key capabilities include:
+This app provides comprehensive real-time information for Caltrain commuters across 25 main Caltrain stations from San Francisco to San Jose Diridon. Key capabilities include:
 
 - 🚆 **Real-time train delays** via 511.org GTFS-Realtime API
 - 🌤️ **Live weather** for origin and destination stations
 - 🎫 **Event crowding alerts** for 9+ SF venues (Oracle Park, Chase Center, Moscone, etc.)
-- 📍 **All 32 Caltrain stations** with GPS coordinates
+- 📍 **25 main Caltrain stations** with GPS coordinates (excluding South County Connector stations)
 - 💾 **Save up to 5 routes** for quick access
 - 🔄 **Auto-refresh** with optimized caching
 
@@ -37,7 +37,8 @@ This app provides comprehensive real-time information for Caltrain commuters acr
 
 ## Features
 
-- **Station Selection**: Choose from all 32 Caltrain stations with easy swap functionality
+- **Station Selection**: Choose from 25 main Caltrain stations (SF to San Jose Diridon) with easy swap functionality
+  - **Note**: South County Connector stations (Tamien, Capitol, Blossom Hill, Morgan Hill, San Martin, Gilroy) are excluded as they're served by a separate 8XX bus service with limited schedule
 - **Train Schedules**: View next 5 upcoming trains with departure/arrival times and durations
   - **Schedule-aware**: Automatically adjusts for weekday, weekend, and holiday schedules
   - Weekday peak hours: More frequent trains (every 20 mins)
@@ -231,7 +232,7 @@ TICKETMASTER_API_KEY=your_consumer_key_here
 
 **Note:** See [app/api/events/route.ts](app/api/events/route.ts) for detailed implementation examples. Ticketmaster is recommended as it provides the most comprehensive coverage with instant approval.
 
-### Moscone Center Events (Manual Maintenance)
+### Moscone Center Events (Automated Updates)
 
 **Important:** Many Moscone Center events (conventions, conferences) are NOT listed on Ticketmaster because they don't sell tickets publicly. The app maintains a separate list for these high-impact events.
 
@@ -239,34 +240,50 @@ TICKETMASTER_API_KEY=your_consumer_key_here
 
 The app checks TWO sources for events:
 1. **Ticketmaster API** - Concerts, sports, public events
-2. **Moscone Events List** - Major conventions & conferences (manually maintained)
+2. **Moscone Events List** - Major conventions & conferences (maintained with helper script)
 
-#### Maintaining the Moscone Events List
+#### Updating the Moscone Events List
 
 Major conventions like **Dreamforce** (170K+ attendees) significantly impact Caltrain but aren't on Ticketmaster.
 
-**To add new Moscone Center events:**
+**Easy monthly update with helper script:**
 
-1. Check [https://www.moscone.com/events](https://www.moscone.com/events) for upcoming conventions
+```bash
+# Run the update script once a month
+node scripts/update-moscone-events.mjs
+
+# The script will:
+# 1. Show current events
+# 2. Suggest upcoming events from SF Travel
+# 3. Ask for confirmation
+# 4. Update lib/moscone-events.ts automatically
+```
+
+See [scripts/README.md](scripts/README.md) for detailed instructions.
+
+**Manual method (if preferred):**
+
+1. Check [https://portal.sftravel.com/calendar_public/home_sfdc.cfm](https://portal.sftravel.com/calendar_public/home_sfdc.cfm) for upcoming conventions
 2. Edit [lib/moscone-events.ts](lib/moscone-events.ts)
 3. Add event details to the `knownMosconeEvents` array:
 
 ```typescript
 {
   name: 'Dreamforce 2025',
-  startDate: '2025-10-13',
-  endDate: '2025-10-17',
+  startDate: '2025-10-14',
+  endDate: '2025-10-16',
   description: 'Salesforce annual conference',
   estimatedAttendance: 170000,
   crowdLevel: 'high'
 }
 ```
 
-4. Events automatically appear in the app - no API key needed!
-
 **Pre-configured events:**
-- ✅ Dreamforce 2025 (Oct 13-17, 2025)
-- Add more as they're announced!
+- ✅ Dreamforce 2025 (Oct 14-16, 2025)
+- ✅ PyTorch Conference 2025 (Oct 21-23)
+- ✅ TechCrunch Disrupt 2025 (Oct 27-29)
+- ✅ Microsoft Ignite 2025 (Nov 17-21)
+- More added via monthly updates!
 
 **Why this matters:** Major conventions can bring 100K+ attendees and cause severe crowding at 4th & King and 22nd Street stations during peak commute hours.
 
@@ -291,13 +308,17 @@ caltrain-commuter-app-no-instrumentation/
 │   ├── ServiceAlerts.tsx        # Real-time service alerts display
 │   └── SavedRoutes.tsx          # Saved routes manager
 ├── lib/
-│   ├── stations.ts              # All 32 Caltrain stations data
+│   ├── stations.ts              # All 31 Caltrain stations data
 │   ├── types.ts                 # TypeScript interfaces
 │   ├── utils.ts                 # Utility functions
 │   ├── venues.ts                # Venue data for event tracking
-│   ├── moscone-events.ts        # Manually maintained Moscone Center events
+│   ├── moscone-events.ts        # Moscone Center events (auto-updated via script)
+│   ├── chase-center-events.ts   # Chase Center events (Warriors, concerts)
 │   ├── gtfs-static.ts           # GTFS Static schedule parser
 │   └── gtfs-realtime.ts         # GTFS-Realtime API utilities
+├── scripts/
+│   ├── README.md                # Documentation for helper scripts
+│   └── update-moscone-events.mjs # Script to update Moscone events monthly
 ├── data/
 │   └── gtfs/                    # Official Caltrain GTFS schedule data
 │       ├── calendar.txt         # Service calendar (weekday/weekend)
@@ -320,7 +341,9 @@ The app includes official Caltrain schedule data in the `/data/gtfs/` directory:
 - ✅ **Real train times** from Caltrain's official timetables
 - ✅ **Actual train numbers** (123, 125, 127, etc.)
 - ✅ **Weekday/weekend/holiday schedules** automatically detected
-- ✅ **All 32 stations** with accurate arrival/departure times
+- ✅ **Schedule data for 31 Caltrain stations** (SF to Gilroy)
+  - App allows selection of 25 main stations (SF to San Jose Diridon)
+  - South County stations excluded from UI as they're served by 8XX bus connector
 - ✅ **Works offline** - no API key required for basic schedules
 
 **Updating the schedule**:
@@ -336,10 +359,15 @@ unzip -q /tmp/caltrain-gtfs.zip -d data/gtfs/
 
 ## Available Scripts
 
+### Development & Build
 - `npm run dev` - Start development server
 - `npm run build` - Build for production
 - `npm start` - Start production server
 - `npm run lint` - Run ESLint
+
+### Maintenance Scripts
+- `node scripts/update-moscone-events.mjs` - Update Moscone Center events (run monthly)
+  - See [scripts/README.md](scripts/README.md) for details
 
 ## Features Roadmap
 

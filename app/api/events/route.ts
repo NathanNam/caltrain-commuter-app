@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { VenueEvent } from '@/lib/types';
 import { ticketmasterVenueIds } from '@/lib/venues';
 import { getMosconeEventsForDate } from '@/lib/moscone-events';
+import { getChaseCenterEventsForDate } from '@/lib/chase-center-events';
 
 // This API fetches events from multiple venues near Caltrain stations
 // Supports: Oracle Park, Chase Center, Bill Graham, The Fillmore, and more
@@ -11,17 +12,20 @@ export async function GET(request: NextRequest) {
   const date = searchParams.get('date') || new Date().toISOString().split('T')[0];
   const dateObj = new Date(date);
 
-  // ALWAYS check Moscone Center events (from manually maintained list)
+  // ALWAYS check manually maintained event lists
   const mosconeEvents = getMosconeEventsForDate(dateObj);
+  const chaseCenterEvents = getChaseCenterEventsForDate(dateObj);
 
   // Check if Ticketmaster API key is configured
   if (process.env.TICKETMASTER_API_KEY) {
     try {
       const ticketmasterEvents = await fetchTicketmasterEvents(date);
 
-      // Combine Ticketmaster events with Moscone events
-      // Remove duplicates by checking if Moscone event already in Ticketmaster results
+      // Combine Ticketmaster events with manually maintained events
+      // Remove duplicates by checking event names and venues
       const allEvents = [...ticketmasterEvents];
+
+      // Add Moscone events if not already in Ticketmaster results
       for (const mosconeEvent of mosconeEvents) {
         const isDuplicate = ticketmasterEvents.some(
           e => e.venueName.toLowerCase().includes('moscone') &&
@@ -29,6 +33,17 @@ export async function GET(request: NextRequest) {
         );
         if (!isDuplicate) {
           allEvents.push(mosconeEvent);
+        }
+      }
+
+      // Add Chase Center events if not already in Ticketmaster results
+      for (const chaseCenterEvent of chaseCenterEvents) {
+        const isDuplicate = ticketmasterEvents.some(
+          e => e.venueName.toLowerCase().includes('chase') &&
+               e.eventName === chaseCenterEvent.eventName
+        );
+        if (!isDuplicate) {
+          allEvents.push(chaseCenterEvent);
         }
       }
 
@@ -46,18 +61,30 @@ export async function GET(request: NextRequest) {
     }
   }
 
-  // If no API key or API fails, return mock data + Moscone events
+  // If no API key or API fails, return mock data + manually maintained events
   console.log('Using mock event data - configure TICKETMASTER_API_KEY for real events');
   const mockEvents = generateMockEvents(date);
 
-  // Combine mock events with Moscone events (avoid duplicates)
+  // Combine mock events with manually maintained events (avoid duplicates)
   const allEvents = [...mockEvents];
+
+  // Add Moscone events
   for (const mosconeEvent of mosconeEvents) {
     const isDuplicate = mockEvents.some(
       e => e.venueName === 'Moscone Center' && e.eventName === mosconeEvent.eventName
     );
     if (!isDuplicate) {
       allEvents.push(mosconeEvent);
+    }
+  }
+
+  // Add Chase Center events
+  for (const chaseCenterEvent of chaseCenterEvents) {
+    const isDuplicate = mockEvents.some(
+      e => e.venueName === 'Chase Center' && e.eventName === chaseCenterEvent.eventName
+    );
+    if (!isDuplicate) {
+      allEvents.push(chaseCenterEvent);
     }
   }
 
