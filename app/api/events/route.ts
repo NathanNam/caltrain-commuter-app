@@ -1,19 +1,24 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { VenueEvent } from '@/lib/types';
 import { ticketmasterVenueIds } from '@/lib/venues';
-import { getMosconeEventsForDate } from '@/lib/moscone-events';
+import { getMosconeEventsForDate as getMosconeEventsRuntime } from '@/lib/moscone-events-fetcher';
 import { getChaseCenterEventsForDate } from '@/lib/chase-center-events';
 
 // This API fetches events from multiple venues near Caltrain stations
 // Supports: Oracle Park, Chase Center, Bill Graham, The Fillmore, and more
+//
+// Moscone events are automatically fetched at runtime from SF Travel (cached for 24h)
+// Chase Center events are manually maintained in chase-center-events.ts
 
 export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams;
   const date = searchParams.get('date') || new Date().toISOString().split('T')[0];
   const dateObj = new Date(date);
 
-  // ALWAYS check manually maintained event lists
-  const mosconeEvents = getMosconeEventsForDate(dateObj);
+  // Fetch Moscone events at runtime (automatically fetched from SF Travel, cached for 24h)
+  const mosconeEvents = await getMosconeEventsRuntime(dateObj);
+
+  // Get Chase Center events from manually maintained list
   const chaseCenterEvents = getChaseCenterEventsForDate(dateObj);
 
   // Check if Ticketmaster API key is configured

@@ -50,9 +50,11 @@ This app provides comprehensive real-time information for Caltrain commuters acr
   - Color-coded status badges (green = on-time, orange = delayed, red = cancelled)
 - **Weather Information**: See current weather for both origin and destination stations
 - **Event Crowding Alerts**: See upcoming events at major SF venues that may cause crowding 🏟️
+  - **Automatically updated** - Moscone events fetched at runtime every 24 hours
   - Oracle Park (SF Giants)
   - Chase Center (Warriors, Concerts)
-  - Moscone Center (Tech conferences, conventions - Dreamforce, WWDC, etc.)
+  - Moscone Center (Tech conferences, conventions - automatically fetched!)
+    - Dreamforce, Microsoft Ignite, TechCrunch Disrupt, PyTorch Conference, and more
   - Bill Graham Civic Auditorium
   - The Fillmore, The Masonic, Warfield Theatre
   - And more concert venues near 4th & King
@@ -70,8 +72,10 @@ This app provides comprehensive real-time information for Caltrain commuters acr
   - 511.org Transit API (GTFS-Realtime for train delays & alerts)
   - OpenWeatherMap API (weather data)
   - Ticketmaster Discovery API (event crowding alerts)
+  - SF Travel Convention Calendar (Moscone events - automatically scraped at runtime)
 - **Data Format**: GTFS-Realtime Protocol Buffers
 - **Storage**: localStorage for saved routes
+- **Event Fetching**: Runtime web scraping with 24-hour caching
 
 ## Getting Started
 
@@ -232,60 +236,54 @@ TICKETMASTER_API_KEY=your_consumer_key_here
 
 **Note:** See [app/api/events/route.ts](app/api/events/route.ts) for detailed implementation examples. Ticketmaster is recommended as it provides the most comprehensive coverage with instant approval.
 
-### Moscone Center Events (Automated Updates)
+### Moscone Center Events (Fully Automatic) ✨
 
-**Important:** Many Moscone Center events (conventions, conferences) are NOT listed on Ticketmaster because they don't sell tickets publicly. The app maintains a separate list for these high-impact events.
+**Important:** Many Moscone Center events (conventions, conferences) are NOT listed on Ticketmaster because they don't sell tickets publicly.
 
-#### How It Works
+#### How It Works - Zero Maintenance Required!
 
-The app checks TWO sources for events:
-1. **Ticketmaster API** - Concerts, sports, public events
-2. **Moscone Events List** - Major conventions & conferences (maintained with helper script)
+The app **automatically fetches** Moscone events at runtime:
 
-#### Updating the Moscone Events List
+1. **Ticketmaster API** - Concerts, sports, public events (if API key configured)
+2. **Moscone Events** - **Automatically fetched from SF Travel at runtime** (cached for 24 hours)
+3. **Chase Center Events** - Manually maintained list (optional, for Warriors games)
 
-Major conventions like **Dreamforce** (170K+ attendees) significantly impact Caltrain but aren't on Ticketmaster.
+#### Automatic Runtime Fetching
 
-**Easy monthly update with helper script:**
+Moscone events are now **fetched automatically** every 24 hours:
+
+✅ **No scripts to run** - Events update automatically
+✅ **No manual maintenance** - App scrapes SF Travel convention calendar
+✅ **24-hour cache** - Minimizes requests, stays fresh
+✅ **Always up-to-date** - New events appear automatically
+✅ **Zero effort** - Just deploy and forget!
+
+**How it works:**
+- App fetches from https://portal.sftravel.com/calendar_public/home_sfdc.cfm
+- Parses upcoming Moscone conventions (next 6 months)
+- Caches results for 24 hours
+- Automatically refreshes when cache expires
+- Falls back to stale cache if fetch fails
+
+#### Optional: Manual Script (Not Needed)
+
+If you prefer to pre-generate events, you can optionally run:
 
 ```bash
-# Run the update script once a month
-node scripts/update-moscone-events.mjs
-
-# The script will:
-# 1. Show current events
-# 2. Suggest upcoming events from SF Travel
-# 3. Ask for confirmation
-# 4. Update lib/moscone-events.ts automatically
+# Optional - only if you want to pre-generate events
+node scripts/update-moscone-events-auto.mjs
 ```
 
-See [scripts/README.md](scripts/README.md) for detailed instructions.
+**But you don't need to!** The app handles everything automatically.
 
-**Manual method (if preferred):**
+**Currently tracked events (automatically updated):**
+- Dreamforce 2025 (Oct 14-16) - 170K attendees
+- PyTorch Conference 2025 (Oct 21-23) - 30K attendees
+- TechCrunch Disrupt 2025 (Oct 27-29) - 80K attendees
+- Microsoft Ignite 2025 (Nov 17-21) - 150K attendees
+- And ~15+ more events automatically
 
-1. Check [https://portal.sftravel.com/calendar_public/home_sfdc.cfm](https://portal.sftravel.com/calendar_public/home_sfdc.cfm) for upcoming conventions
-2. Edit [lib/moscone-events.ts](lib/moscone-events.ts)
-3. Add event details to the `knownMosconeEvents` array:
-
-```typescript
-{
-  name: 'Dreamforce 2025',
-  startDate: '2025-10-14',
-  endDate: '2025-10-16',
-  description: 'Salesforce annual conference',
-  estimatedAttendance: 170000,
-  crowdLevel: 'high'
-}
-```
-
-**Pre-configured events:**
-- ✅ Dreamforce 2025 (Oct 14-16, 2025)
-- ✅ PyTorch Conference 2025 (Oct 21-23)
-- ✅ TechCrunch Disrupt 2025 (Oct 27-29)
-- ✅ Microsoft Ignite 2025 (Nov 17-21)
-- More added via monthly updates!
-
-**Why this matters:** Major conventions can bring 100K+ attendees and cause severe crowding at 4th & King and 22nd Street stations during peak commute hours.
+**Why this matters:** Major conventions can bring 100K+ attendees and cause severe crowding at 4th & King and 22nd Street stations during peak commute hours. The app automatically tracks these to help you plan your commute.
 
 ## Project Structure
 
@@ -312,7 +310,8 @@ caltrain-commuter-app-no-instrumentation/
 │   ├── types.ts                 # TypeScript interfaces
 │   ├── utils.ts                 # Utility functions
 │   ├── venues.ts                # Venue data for event tracking
-│   ├── moscone-events.ts        # Moscone Center events (auto-updated via script)
+│   ├── moscone-events-fetcher.ts # Runtime Moscone events fetcher (auto-updates every 24h)
+│   ├── moscone-events.ts        # Legacy static Moscone events (no longer used)
 │   ├── chase-center-events.ts   # Chase Center events (Warriors, concerts)
 │   ├── gtfs-static.ts           # GTFS Static schedule parser
 │   └── gtfs-realtime.ts         # GTFS-Realtime API utilities
@@ -366,13 +365,15 @@ unzip -q /tmp/caltrain-gtfs.zip -d data/gtfs/
 - `npm run lint` - Run ESLint
 
 ### Maintenance Scripts
-- `node scripts/update-moscone-events.mjs` - Update Moscone Center events (run monthly)
+- `node scripts/update-moscone-events-auto.mjs` - **Optional** manual Moscone events update
+  - **Not needed** - Moscone events now fetch automatically at runtime!
+  - Only use if you want to pre-generate events or test the scraper
   - See [scripts/README.md](scripts/README.md) for details
 
 ## Features Roadmap
 
 ### ✅ Phase 1 - MVP (Complete)
-- Station selection with all 32 stations
+- Station selection with 25 main stations
 - Next 5 trains display
 - Weather for origin and destination
 - Saved routes (up to 5)
@@ -385,6 +386,7 @@ unzip -q /tmp/caltrain-gtfs.zip -d data/gtfs/
 - ✅ Service alerts from 511.org API
 - ✅ Event crowding alerts for 9+ SF venues
 - ✅ Visual delay indicators and status badges
+- ✅ Automatic Moscone events fetching (runtime scraping with 24h cache)
 
 ### 🚧 Phase 3 - Advanced Features (Future)
 - Push notifications for delays
