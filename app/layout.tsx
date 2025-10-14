@@ -35,9 +35,6 @@ export default function RootLayout({
             <p>
               Built with Next.js | Data updates automatically
             </p>
-            <p className="mt-2 text-gray-400 text-xs">
-              Note: Using mock train data. Configure API keys in .env.local for real-time data.
-            </p>
           </div>
         </footer>
       </body>
