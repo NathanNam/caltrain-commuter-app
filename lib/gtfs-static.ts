@@ -498,9 +498,24 @@ export async function getScheduledTrains(
 
     const durationMinutes = Math.round((arrivalDate.getTime() - departureDate.getTime()) / 60000);
 
-    // Determine train type (Local, Limited, Express) based on trip pattern
-    // This is simplified - ideally would check actual stop patterns
-    const trainType: 'Local' | 'Limited' | 'Express' = 'Local';
+    // Determine train type (Local, Limited, Express) based on number of stops
+    // Count how many stops this trip makes
+    const tripStopCount = gtfsCache.stopTimes.filter(
+      (st) => st.trip_id === trip.trip_id
+    ).length;
+
+    // Classify based on stop count:
+    // Local: 20+ stops (stops at most/all stations)
+    // Limited: 13-19 stops (skips some smaller stations)
+    // Express: <13 stops (only major stations)
+    let trainType: 'Local' | 'Limited' | 'Express';
+    if (tripStopCount >= 20) {
+      trainType = 'Local';
+    } else if (tripStopCount >= 13) {
+      trainType = 'Limited';
+    } else {
+      trainType = 'Express';
+    }
 
     trains.push({
       trainNumber: trip.trip_short_name || trip.trip_id,
