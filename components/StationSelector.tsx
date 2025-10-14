@@ -18,6 +18,12 @@ export default function StationSelector({
   onDestinationChange,
   onSwap
 }: StationSelectorProps) {
+  // Filter out South County Connector stations (served by 8XX service)
+  const southCountyStations = ['tamien', 'capitol', 'blossom-hill', 'morgan-hill', 'san-martin', 'gilroy'];
+  const availableStations = stations.filter(
+    station => !southCountyStations.includes(station.id)
+  );
+
   const isValidRoute = originId && destinationId && originId !== destinationId;
 
   return (
@@ -37,7 +43,7 @@ export default function StationSelector({
             className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white text-gray-900"
           >
             <option value="">Select origin station</option>
-            {stations.map((station) => (
+            {availableStations.map((station) => (
               <option
                 key={station.id}
                 value={station.id}
@@ -86,7 +92,7 @@ export default function StationSelector({
             className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white text-gray-900"
           >
             <option value="">Select destination station</option>
-            {stations.map((station) => (
+            {availableStations.map((station) => (
               <option
                 key={station.id}
                 value={station.id}
