@@ -6,6 +6,22 @@ A Next.js web application that helps Caltrain commuters plan their trips by prov
 ![TypeScript](https://img.shields.io/badge/TypeScript-5-blue)
 ![Tailwind CSS](https://img.shields.io/badge/Tailwind-4-38bdf8)
 
+## 🚀 Live Demo
+
+**Try it now:** [https://caltrain-commuter.observe-demo.com/](https://caltrain-commuter.observe-demo.com/)
+
+The live demo is fully functional with real-time features enabled!
+
+## 📸 Screenshots
+
+<div align="center">
+  <img src="images/screenshot_01.png" alt="Caltrain Commuter App - Main Dashboard" width="800"/>
+  <p><em>Main dashboard showing train schedules, weather, and saved routes</em></p>
+
+  <img src="images/screenshot_02.png" alt="Caltrain Commuter App - Real-time Features" width="800"/>
+  <p><em>Real-time delay tracking and event crowding alerts</em></p>
+</div>
+
 ## Overview
 
 This app provides comprehensive real-time information for Caltrain commuters across all 32 stations from San Francisco to Gilroy. Key capabilities include:
