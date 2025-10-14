@@ -25,9 +25,12 @@ export async function GET(request: NextRequest) {
   try {
     // Check if API key is configured
     if (!process.env.WEATHER_API_KEY) {
-      console.warn('WEATHER_API_KEY not configured, using mock data');
+      console.log('Using mock weather data - configure WEATHER_API_KEY for real weather');
       return NextResponse.json(
-        generateMockWeather(station.coordinates.lat),
+        {
+          ...generateMockWeather(station.coordinates.lat),
+          isMockData: true
+        },
         {
           headers: {
             'Cache-Control': 'public, s-maxage=600, stale-while-revalidate=1200'
@@ -59,7 +62,10 @@ export async function GET(request: NextRequest) {
       humidity: data.main.humidity
     };
 
-    return NextResponse.json(weatherData, {
+    return NextResponse.json({
+      ...weatherData,
+      isMockData: false
+    }, {
       headers: {
         'Cache-Control': 'public, s-maxage=600, stale-while-revalidate=1200'
       }
@@ -69,7 +75,10 @@ export async function GET(request: NextRequest) {
     console.error('Weather API error:', error);
     // Return mock data as fallback
     return NextResponse.json(
-      generateMockWeather(station.coordinates.lat),
+      {
+        ...generateMockWeather(station.coordinates.lat),
+        isMockData: true
+      },
       {
         headers: {
           'Cache-Control': 'public, s-maxage=300'

@@ -39,6 +39,10 @@ This app provides comprehensive real-time information for Caltrain commuters acr
 
 - **Station Selection**: Choose from all 32 Caltrain stations with easy swap functionality
 - **Train Schedules**: View next 5 upcoming trains with departure/arrival times and durations
+  - **Schedule-aware**: Automatically adjusts for weekday, weekend, and holiday schedules
+  - Weekday peak hours: More frequent trains (every 20 mins)
+  - Weekends: Reduced frequency (every 45 mins)
+  - Holidays: Special holiday schedule (every 60 mins)
 - **Real-Time Delay Tracking**: See live train delays and on-time status 🚦
   - Visual indicators for on-time, delayed, early, or cancelled trains
   - Delay duration displayed in minutes
@@ -114,15 +118,19 @@ npm run dev
 
 ## Real-Time Data Status
 
-| Feature | Current Status | Real Data Available? | API Key Required |
-|---------|---------------|---------------------|------------------|
-| **Train Schedules** | Mock data | ✅ Yes | `TRANSIT_API_KEY` |
-| **Train Delays** | Mock data | ✅ Yes | `TRANSIT_API_KEY` |
-| **Service Alerts** | Mock data | ✅ Yes | `TRANSIT_API_KEY` |
-| **Weather** | Mock data | ✅ Yes | `WEATHER_API_KEY` |
-| **Event Crowding** | No events shown | ✅ Yes | `TICKETMASTER_API_KEY` |
+| Feature | Current Status | Data Source | API Key Required |
+|---------|---------------|------------|------------------|
+| **Train Schedules** | ✅ Real schedules (from local GTFS) | Official Caltrain timetables | None (local files) |
+| **Train Delays** | Ready for real-time | 511.org GTFS-Realtime | `TRANSIT_API_KEY` |
+| **Service Alerts** | Ready for real-time | 511.org API | `TRANSIT_API_KEY` |
+| **Weather** | Ready for real-time | OpenWeatherMap | `WEATHER_API_KEY` |
+| **Event Crowding** | Ready for real-time | Ticketmaster API | `TICKETMASTER_API_KEY` |
 
-**The app works perfectly with mock data out of the box.** To enable real-time features, configure the API keys below.
+**The app uses REAL Caltrain schedules out of the box!**
+
+- Train times come from official GTFS data (stored in `/data/gtfs/`)
+- No API key needed for schedules - works offline
+- Configure API keys to add real-time delays, weather, and events
 
 ## API Configuration
 
@@ -131,7 +139,7 @@ npm run dev
 Add these to your `.env.local` file to enable all real-time features:
 
 ```bash
-# 511.org - For train delays, schedules, and service alerts
+# 511.org - For real train schedules, delays, and service alerts
 TRANSIT_API_KEY=your_511_api_key_here
 
 # OpenWeatherMap - For real weather data
@@ -147,18 +155,23 @@ TICKETMASTER_API_KEY=your_consumer_key_here
 
 1. Register for a free API key at [https://511.org/open-data/token](https://511.org/open-data/token)
 2. Add to `.env.local` as `TRANSIT_API_KEY`
-3. The app automatically uses real-time data when the key is present, including:
-   - **Trip Updates**: Real-time delay information for all trains
+3. The app automatically uses real data when the key is present, including:
+   - **GTFS Static Schedule**: Real Caltrain timetables (weekday/weekend/holiday schedules)
+   - **GTFS-Realtime Trip Updates**: Real-time delay information for all trains
    - **Service Alerts**: Live service disruptions and notices
-   - **GTFS-Realtime**: Industry-standard transit feed format
 
 **What you get with TRANSIT_API_KEY configured:**
-- ✅ Real-time train delay tracking (delays shown in minutes)
-- ✅ On-time status indicators (on-time, delayed, cancelled)
-- ✅ Service alert notifications (track maintenance, schedule changes)
-- ✅ Updates every 30 seconds for maximum accuracy
+- ✅ **Real Caltrain schedules** from official GTFS data
+  - Actual train times based on Caltrain's published timetables
+  - Automatic weekday, weekend, and holiday schedule detection
+  - Correct train numbers and service patterns
+- ✅ **Real-time train delay tracking** (delays shown in minutes)
+- ✅ **On-time status indicators** (on-time, delayed, cancelled)
+- ✅ **Service alert notifications** (track maintenance, schedule changes)
+- ✅ **24-hour schedule caching** (efficient data usage)
+- ✅ **Updates every 30 seconds** for maximum accuracy
 
-**Without the API key:** The app uses mock train schedules (no real-time delays)
+**Without the API key:** The app uses real Caltrain schedules from local GTFS files (no delays shown, schedule only)
 
 ### OpenWeatherMap API (for weather)
 
@@ -218,6 +231,45 @@ TICKETMASTER_API_KEY=your_consumer_key_here
 
 **Note:** See [app/api/events/route.ts](app/api/events/route.ts) for detailed implementation examples. Ticketmaster is recommended as it provides the most comprehensive coverage with instant approval.
 
+### Moscone Center Events (Manual Maintenance)
+
+**Important:** Many Moscone Center events (conventions, conferences) are NOT listed on Ticketmaster because they don't sell tickets publicly. The app maintains a separate list for these high-impact events.
+
+#### How It Works
+
+The app checks TWO sources for events:
+1. **Ticketmaster API** - Concerts, sports, public events
+2. **Moscone Events List** - Major conventions & conferences (manually maintained)
+
+#### Maintaining the Moscone Events List
+
+Major conventions like **Dreamforce** (170K+ attendees) significantly impact Caltrain but aren't on Ticketmaster.
+
+**To add new Moscone Center events:**
+
+1. Check [https://www.moscone.com/events](https://www.moscone.com/events) for upcoming conventions
+2. Edit [lib/moscone-events.ts](lib/moscone-events.ts)
+3. Add event details to the `knownMosconeEvents` array:
+
+```typescript
+{
+  name: 'Dreamforce 2025',
+  startDate: '2025-10-13',
+  endDate: '2025-10-17',
+  description: 'Salesforce annual conference',
+  estimatedAttendance: 170000,
+  crowdLevel: 'high'
+}
+```
+
+4. Events automatically appear in the app - no API key needed!
+
+**Pre-configured events:**
+- ✅ Dreamforce 2025 (Oct 13-17, 2025)
+- Add more as they're announced!
+
+**Why this matters:** Major conventions can bring 100K+ attendees and cause severe crowding at 4th & King and 22nd Street stations during peak commute hours.
+
 ## Project Structure
 
 ```
@@ -243,10 +295,44 @@ caltrain-commuter-app-no-instrumentation/
 │   ├── types.ts                 # TypeScript interfaces
 │   ├── utils.ts                 # Utility functions
 │   ├── venues.ts                # Venue data for event tracking
+│   ├── moscone-events.ts        # Manually maintained Moscone Center events
+│   ├── gtfs-static.ts           # GTFS Static schedule parser
 │   └── gtfs-realtime.ts         # GTFS-Realtime API utilities
+├── data/
+│   └── gtfs/                    # Official Caltrain GTFS schedule data
+│       ├── calendar.txt         # Service calendar (weekday/weekend)
+│       ├── calendar_dates.txt   # Holiday exceptions
+│       ├── trips.txt            # Train trips
+│       ├── stop_times.txt       # Actual train times
+│       └── stops.txt            # Station stops
+├── images/                      # Screenshots
 └── public/
     └── icons/                   # Weather icons (if needed)
 ```
+
+## GTFS Schedule Data
+
+The app includes official Caltrain schedule data in the `/data/gtfs/` directory:
+
+**Source**: [https://data.trilliumtransit.com/gtfs/caltrain-ca-us/caltrain-ca-us.zip](https://data.trilliumtransit.com/gtfs/caltrain-ca-us/caltrain-ca-us.zip)
+
+**What's included**:
+- ✅ **Real train times** from Caltrain's official timetables
+- ✅ **Actual train numbers** (123, 125, 127, etc.)
+- ✅ **Weekday/weekend/holiday schedules** automatically detected
+- ✅ **All 32 stations** with accurate arrival/departure times
+- ✅ **Works offline** - no API key required for basic schedules
+
+**Updating the schedule**:
+```bash
+# Download latest GTFS data
+curl -L -o /tmp/caltrain-gtfs.zip https://data.trilliumtransit.com/gtfs/caltrain-ca-us/caltrain-ca-us.zip
+
+# Extract to data directory
+unzip -q /tmp/caltrain-gtfs.zip -d data/gtfs/
+```
+
+**Note**: GTFS data is typically updated when Caltrain changes their schedule (usually quarterly). The app automatically detects which schedule to use based on the current date.
 
 ## Available Scripts
 
@@ -332,12 +418,17 @@ The app integrates with **511.org's GTFS-Realtime API** to provide accurate trai
 
 1. **Trip Updates Feed**: Fetches real-time delay data every 30 seconds from 511.org
 2. **Protocol Buffers**: Uses industry-standard GTFS-Realtime format for efficient data transfer
-3. **Delay Detection**: Compares scheduled vs. actual times at each stop
-4. **Visual Indicators**:
+3. **Schedule Awareness**: Automatically handles different schedules:
+   - **Weekday schedule**: More frequent trains during peak hours (6-9am, 4-7pm)
+   - **Weekend schedule**: Reduced service on Saturdays and Sundays
+   - **Holiday schedule**: Special service on major US holidays (New Year's, Memorial Day, Independence Day, Labor Day, Thanksgiving, Christmas)
+   - Real-time API automatically provides correct schedule based on current date
+4. **Delay Detection**: Compares scheduled vs. actual times at each stop
+5. **Visual Indicators**:
    - 🟢 Green badge = On time
    - 🟠 Orange badge = Delayed (shows delay in minutes)
    - 🔴 Red badge = Cancelled
-5. **Service Alerts**: Displays system-wide disruptions and maintenance notices
+6. **Service Alerts**: Displays system-wide disruptions and maintenance notices
 
 ### Weather Data
 
@@ -357,10 +448,33 @@ The app integrates with **511.org's GTFS-Realtime API** to provide accurate trai
   - Special conventions (Dreamforce, WWDC at Moscone)
 - Updates every 30 minutes
 
+### Train Schedule Architecture
+
+The app uses a sophisticated two-layer approach for maximum accuracy:
+
+**Layer 1: GTFS Static Schedule (Base Timetable)**
+1. Fetches official Caltrain GTFS data from Trillium Transit CDN
+2. Parses `calendar.txt` and `calendar_dates.txt` to determine active service (weekday/weekend/holiday)
+3. Reads `trips.txt` and `stop_times.txt` for actual train times
+4. Caches schedule data for 24 hours (refreshes daily)
+5. Provides baseline schedule with correct train numbers and times
+
+**Layer 2: GTFS-Realtime (Live Updates)**
+1. Fetches live trip updates from 511.org every 30 seconds
+2. Applies delays to scheduled trains
+3. Updates train status (on-time, delayed, cancelled)
+4. Combines with Layer 1 for complete picture
+
+**Result**: Users see real Caltrain train numbers and schedule times, enhanced with live delay information.
+
 ### Data Flow Architecture
 
 ```
-User Request → Next.js API Route → External API → Data Processing → Cache (30s-30min) → User Response
+User Request → Next.js API Route → GTFS Static + GTFS-Realtime APIs → Data Processing → Cache → User Response
+                                          ↓
+                            Trillium Transit (schedules, 24h cache)
+                                          +
+                                 511.org (delays, 30s cache)
 ```
 
-**Note**: All real-time features gracefully fall back to mock data if API keys are not configured or if APIs fail. The app is fully functional without any API keys.
+**Note**: All real-time features gracefully fall back to intelligent mock data if API keys are not configured or if APIs fail. The app is fully functional without any API keys.

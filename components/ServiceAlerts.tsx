@@ -6,6 +6,7 @@ import { ServiceAlert } from '@/lib/types';
 export default function ServiceAlerts() {
   const [alerts, setAlerts] = useState<ServiceAlert[]>([]);
   const [loading, setLoading] = useState(true);
+  const [isMockData, setIsMockData] = useState(false);
 
   useEffect(() => {
     const fetchAlerts = async () => {
@@ -14,6 +15,7 @@ export default function ServiceAlerts() {
         if (response.ok) {
           const data = await response.json();
           setAlerts(data.alerts || []);
+          setIsMockData(data.isMockData || false);
         }
       } catch (error) {
         console.error('Error fetching alerts:', error);
@@ -60,7 +62,14 @@ export default function ServiceAlerts() {
 
   return (
     <div className="space-y-3">
-      <h2 className="text-xl font-bold text-gray-800">Service Alerts</h2>
+      <div className="flex items-center gap-2">
+        <h2 className="text-xl font-bold text-gray-800">Service Alerts</h2>
+        {isMockData && (
+          <span className="text-xs bg-yellow-100 text-yellow-800 px-2 py-1 rounded font-semibold">
+            DEMO MODE
+          </span>
+        )}
+      </div>
 
       {alerts.map((alert) => {
         const styles = severityStyles[alert.severity];

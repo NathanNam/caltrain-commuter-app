@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { VenueEvent } from '@/lib/types';
 import { ticketmasterVenueIds } from '@/lib/venues';
+import { getMosconeEventsForDate } from '@/lib/moscone-events';
 
 // This API fetches events from multiple venues near Caltrain stations
 // Supports: Oracle Park, Chase Center, Bill Graham, The Fillmore, and more
@@ -8,49 +9,78 @@ import { ticketmasterVenueIds } from '@/lib/venues';
 export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams;
   const date = searchParams.get('date') || new Date().toISOString().split('T')[0];
+  const dateObj = new Date(date);
+
+  // ALWAYS check Moscone Center events (from manually maintained list)
+  const mosconeEvents = getMosconeEventsForDate(dateObj);
 
   // Check if Ticketmaster API key is configured
   if (process.env.TICKETMASTER_API_KEY) {
     try {
-      const events = await fetchTicketmasterEvents(date);
-      return NextResponse.json({ events }, {
+      const ticketmasterEvents = await fetchTicketmasterEvents(date);
+
+      // Combine Ticketmaster events with Moscone events
+      // Remove duplicates by checking if Moscone event already in Ticketmaster results
+      const allEvents = [...ticketmasterEvents];
+      for (const mosconeEvent of mosconeEvents) {
+        const isDuplicate = ticketmasterEvents.some(
+          e => e.venueName.toLowerCase().includes('moscone') &&
+               e.eventName === mosconeEvent.eventName
+        );
+        if (!isDuplicate) {
+          allEvents.push(mosconeEvent);
+        }
+      }
+
+      return NextResponse.json({
+        events: allEvents,
+        isMockData: false
+      }, {
         headers: {
           'Cache-Control': 'public, s-maxage=1800, stale-while-revalidate=3600' // Cache for 30 min
         }
       });
     } catch (error) {
       console.error('Ticketmaster API error:', error);
-      // Fall back to mock data if API fails
+      // Fall back to mock data + Moscone events if API fails
     }
   }
 
-  // If no API key or API fails, return mock data (currently empty)
-  const events = generateMockEvents(date);
+  // If no API key or API fails, return mock data + Moscone events
+  console.log('Using mock event data - configure TICKETMASTER_API_KEY for real events');
+  const mockEvents = generateMockEvents(date);
 
-  return NextResponse.json({ events }, {
+  // Combine mock events with Moscone events (avoid duplicates)
+  const allEvents = [...mockEvents];
+  for (const mosconeEvent of mosconeEvents) {
+    const isDuplicate = mockEvents.some(
+      e => e.venueName === 'Moscone Center' && e.eventName === mosconeEvent.eventName
+    );
+    if (!isDuplicate) {
+      allEvents.push(mosconeEvent);
+    }
+  }
+
+  return NextResponse.json({
+    events: allEvents,
+    isMockData: true
+  }, {
     headers: {
       'Cache-Control': 'public, s-maxage=1800, stale-while-revalidate=3600' // Cache for 30 min
     }
   });
 }
 
-// Mock event generator
-// NOTE: This generates sample events for demonstration purposes only.
-// In production, replace with actual API calls to get real event data.
-// To see the UI working, uncomment the events below or integrate with real APIs.
+// Mock event generator - generates sample events for demonstration
+// NOTE: Moscone Center events are now handled by the moscone-events.ts data file
 function generateMockEvents(date: string): VenueEvent[] {
   const events: VenueEvent[] = [];
-
-  // MOCK DATA DISABLED - No fake events shown by default
-  // To test the event crowding alerts UI, uncomment the examples below:
-
-  /*
   const today = new Date();
   const hour = today.getHours();
-
-  // Example: Oracle Park (SF Giants) - affects SF, 22nd Street, Bayshore stations
-  // Giants games typically at 1:05 PM or 6:45 PM during baseball season (April-October)
   const month = today.getMonth(); // 0-11
+
+  // Oracle Park (SF Giants) - affects SF, 22nd Street, Bayshore stations
+  // Giants games typically at 1:05 PM or 6:45 PM during baseball season (April-October)
   const isBaseballSeason = month >= 3 && month <= 9; // April (3) to October (9)
 
   if (isBaseballSeason && hour < 20) {
@@ -58,7 +88,7 @@ function generateMockEvents(date: string): VenueEvent[] {
     gameTime.setHours(hour < 14 ? 13 : 18, hour < 14 ? 5 : 45, 0);
 
     events.push({
-      id: 'oracle-park-1',
+      id: 'mock-oracle-park-1',
       venueName: 'Oracle Park',
       eventName: 'SF Giants vs LA Dodgers',
       eventType: 'baseball',
@@ -69,7 +99,7 @@ function generateMockEvents(date: string): VenueEvent[] {
     });
   }
 
-  // Example: Chase Center (Golden State Warriors) - affects SF, 22nd Street
+  // Chase Center (Golden State Warriors) - affects SF, 22nd Street
   // Basketball games typically at 7:00 PM or 7:30 PM during NBA season (October-June)
   const isBasketballSeason = month >= 9 || month <= 5; // October (9) to June (5)
 
@@ -78,7 +108,7 @@ function generateMockEvents(date: string): VenueEvent[] {
     gameTime.setHours(19, 30, 0);
 
     events.push({
-      id: 'chase-center-1',
+      id: 'mock-chase-center-1',
       venueName: 'Chase Center',
       eventName: 'Golden State Warriors vs Lakers',
       eventType: 'basketball',
@@ -89,13 +119,13 @@ function generateMockEvents(date: string): VenueEvent[] {
     });
   }
 
-  // Example: Concert at Chase Center (happens year-round, typically on weekends)
+  // Concert at Chase Center (happens year-round, typically on weekends)
   if (hour >= 16 && hour < 21 && today.getDay() === 5) { // Friday
     const concertTime = new Date(today);
     concertTime.setHours(20, 0, 0);
 
     events.push({
-      id: 'chase-center-concert',
+      id: 'mock-chase-center-concert',
       venueName: 'Chase Center',
       eventName: 'Concert: Taylor Swift',
       eventType: 'concert',
@@ -105,7 +135,6 @@ function generateMockEvents(date: string): VenueEvent[] {
       crowdLevel: 'high'
     });
   }
-  */
 
   return events;
 }
@@ -321,4 +350,21 @@ function determineCrowdLevel(event: any, venueName: string): 'low' | 'moderate' 
   Use MLB API for Giants games + Ticketmaster for everything else
   - MLB API is free, no key needed, very reliable for baseball
   - Ticketmaster has instant approval for concerts, Warriors games, etc.
+
+  ============================================
+  MOSCONE CENTER EVENTS
+  ============================================
+  Moscone Center hosts major conventions and conferences that don't
+  appear on Ticketmaster (Dreamforce, Oracle OpenWorld, WWDC, etc.)
+
+  These events are tracked in lib/moscone-events.ts - a manually maintained
+  list of known major conventions.
+
+  To add new Moscone events:
+  1. Check https://www.moscone.com/events for upcoming conventions
+  2. Update lib/moscone-events.ts with event details
+  3. Events will automatically appear in the app
+
+  Major conventions can bring 100K+ attendees and significantly impact
+  Caltrain ridership, especially at 4th & King and 22nd Street stations.
 */

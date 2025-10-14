@@ -14,6 +14,7 @@ export default function TrainList({ originId, destinationId }: TrainListProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+  const [isMockData, setIsMockData] = useState(false);
 
   useEffect(() => {
     if (!originId || !destinationId) {
@@ -36,6 +37,7 @@ export default function TrainList({ originId, destinationId }: TrainListProps) {
 
         const data = await response.json();
         setTrains(data.trains || []);
+        setIsMockData(data.isMockData || false);
         setLastUpdated(new Date());
       } catch (err) {
         setError(err instanceof Error ? err.message : 'An error occurred');
@@ -97,13 +99,28 @@ export default function TrainList({ originId, destinationId }: TrainListProps) {
   return (
     <div className="bg-white rounded-lg shadow-md p-6">
       <div className="flex justify-between items-center mb-4">
-        <h2 className="text-xl font-bold text-gray-800">Next Trains</h2>
+        <div className="flex items-center gap-2">
+          <h2 className="text-xl font-bold text-gray-800">Next Trains</h2>
+          {isMockData && (
+            <span className="text-xs bg-yellow-100 text-yellow-800 px-2 py-1 rounded font-semibold">
+              DEMO MODE
+            </span>
+          )}
+        </div>
         {lastUpdated && (
           <p className="text-xs text-gray-500">
             Updated {lastUpdated.toLocaleTimeString()}
           </p>
         )}
       </div>
+
+      {isMockData && (
+        <div className="mb-4 bg-yellow-50 border-l-4 border-yellow-400 p-3">
+          <p className="text-xs text-yellow-800">
+            <strong>Demo delays shown.</strong> Configure TRANSIT_API_KEY for real-time train delays.
+          </p>
+        </div>
+      )}
 
       <div className="space-y-3">
         {trains.map((train, index) => (

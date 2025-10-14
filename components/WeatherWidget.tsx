@@ -13,6 +13,7 @@ export default function WeatherWidget({ stationId, label }: WeatherWidgetProps) 
   const [weather, setWeather] = useState<WeatherData | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [isMockData, setIsMockData] = useState(false);
 
   useEffect(() => {
     if (!stationId) {
@@ -33,6 +34,7 @@ export default function WeatherWidget({ stationId, label }: WeatherWidgetProps) 
 
         const data = await response.json();
         setWeather(data);
+        setIsMockData(data.isMockData || false);
       } catch (err) {
         setError(err instanceof Error ? err.message : 'An error occurred');
         setWeather(null);
@@ -86,8 +88,23 @@ export default function WeatherWidget({ stationId, label }: WeatherWidgetProps) 
 
   return (
     <div className="bg-gradient-to-br from-blue-50 to-blue-100 rounded-lg shadow-md p-6">
-      <h3 className="text-lg font-bold text-gray-800 mb-1">{label}</h3>
+      <div className="flex items-center gap-2 mb-1">
+        <h3 className="text-lg font-bold text-gray-800">{label}</h3>
+        {isMockData && (
+          <span className="text-xs bg-yellow-100 text-yellow-800 px-2 py-1 rounded font-semibold">
+            DEMO MODE
+          </span>
+        )}
+      </div>
       <p className="text-sm text-gray-600 mb-4">{station.name}</p>
+
+      {isMockData && (
+        <div className="mb-4 bg-yellow-50 border-l-4 border-yellow-400 p-3">
+          <p className="text-xs text-yellow-800">
+            <strong>Demo weather shown.</strong> Configure WEATHER_API_KEY for real weather data.
+          </p>
+        </div>
+      )}
 
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">

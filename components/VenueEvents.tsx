@@ -8,6 +8,7 @@ export default function VenueEvents() {
   const [events, setEvents] = useState<VenueEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [isMockData, setIsMockData] = useState(false);
 
   useEffect(() => {
     const fetchEvents = async () => {
@@ -23,6 +24,7 @@ export default function VenueEvents() {
 
         const data = await response.json();
         setEvents(data.events || []);
+        setIsMockData(data.isMockData || false);
       } catch (err) {
         setError(err instanceof Error ? err.message : 'An error occurred');
         setEvents([]);
@@ -111,7 +113,20 @@ export default function VenueEvents() {
       <div className="flex items-center gap-2 mb-4">
         <h2 className="text-xl font-bold text-gray-800">Event Crowding Alerts</h2>
         <span className="text-2xl">🏟️</span>
+        {isMockData && (
+          <span className="text-xs bg-yellow-100 text-yellow-800 px-2 py-1 rounded font-semibold">
+            DEMO MODE
+          </span>
+        )}
       </div>
+
+      {isMockData && (
+        <div className="mb-4 bg-yellow-50 border-l-4 border-yellow-400 p-3">
+          <p className="text-xs text-yellow-800">
+            <strong>Demo events shown.</strong> Configure TICKETMASTER_API_KEY for real event data.
+          </p>
+        </div>
+      )}
 
       <p className="text-sm text-gray-600 mb-4">
         Major events happening today that may affect train crowding:
