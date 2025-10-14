@@ -1,28 +1,37 @@
 'use client';
 
+import { useEffect, useState } from 'react';
 import { ServiceAlert } from '@/lib/types';
 
-// Mock service alerts - in production, fetch from API
-const mockAlerts: ServiceAlert[] = [
-  // Uncomment to test different alert types:
-  // {
-  //   id: '1',
-  //   severity: 'warning',
-  //   title: 'Delays Expected',
-  //   description: 'Trains may experience delays of up to 15 minutes due to track maintenance.',
-  //   timestamp: new Date().toISOString()
-  // },
-  // {
-  //   id: '2',
-  //   severity: 'info',
-  //   title: 'Bike Car Available',
-  //   description: 'All trains are equipped with bike cars during peak hours.',
-  //   timestamp: new Date().toISOString()
-  // }
-];
-
 export default function ServiceAlerts() {
-  const alerts = mockAlerts;
+  const [alerts, setAlerts] = useState<ServiceAlert[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchAlerts = async () => {
+      try {
+        const response = await fetch('/api/alerts');
+        if (response.ok) {
+          const data = await response.json();
+          setAlerts(data.alerts || []);
+        }
+      } catch (error) {
+        console.error('Error fetching alerts:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchAlerts();
+
+    // Auto-refresh every 5 minutes
+    const interval = setInterval(fetchAlerts, 300000);
+    return () => clearInterval(interval);
+  }, []);
+
+  if (loading) {
+    return null;
+  }
 
   if (alerts.length === 0) {
     return null;

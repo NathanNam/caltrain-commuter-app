@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { Train } from '@/lib/types';
 import { getStationById } from '@/lib/stations';
+import { fetchTripUpdates, getStopDelay } from '@/lib/gtfs-realtime';
 
-// This is a mock implementation. Replace with actual 511.org API or GTFS data
 export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams;
   const origin = searchParams.get('origin');
@@ -26,13 +26,28 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  // TODO: Replace with actual API call to 511.org or GTFS data parsing
-  // For now, generate mock train data
+  // Fetch real-time trip updates
+  const tripUpdates = await fetchTripUpdates();
+
+  // Generate base train data (mock for now, should be replaced with GTFS schedule data)
   const trains = generateMockTrains(origin, destination);
+
+  // Enhance trains with real-time delay information
+  if (tripUpdates.length > 0) {
+    for (const train of trains) {
+      const delayInfo = getStopDelay(tripUpdates, originStation.code);
+      if (delayInfo) {
+        train.delay = delayInfo.delay;
+        train.status = delayInfo.status;
+      } else {
+        train.status = 'on-time';
+      }
+    }
+  }
 
   return NextResponse.json({ trains }, {
     headers: {
-      'Cache-Control': 'public, s-maxage=60, stale-while-revalidate=120'
+      'Cache-Control': 'public, s-maxage=30, stale-while-revalidate=60'
     }
   });
 }

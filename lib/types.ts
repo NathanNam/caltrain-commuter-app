@@ -17,6 +17,8 @@ export interface Train {
   arrivalTime: string;
   duration: number; // in minutes
   type: 'Local' | 'Limited' | 'Express';
+  delay?: number; // delay in minutes (positive = late, negative = early)
+  status?: 'on-time' | 'delayed' | 'cancelled';
 }
 
 export interface WeatherData {

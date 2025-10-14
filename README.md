@@ -1,15 +1,32 @@
 # Caltrain Commuter App
 
-A Next.js web application that helps Caltrain commuters plan their trips by providing real-time train schedules and weather information at both origin and destination stations.
+A Next.js web application that helps Caltrain commuters plan their trips by providing real-time train schedules, delay tracking, weather information, and event crowding alerts for a better commuting experience.
 
 ![Caltrain Commuter](https://img.shields.io/badge/Next.js-15-black)
 ![TypeScript](https://img.shields.io/badge/TypeScript-5-blue)
 ![Tailwind CSS](https://img.shields.io/badge/Tailwind-4-38bdf8)
 
+## Overview
+
+This app provides comprehensive real-time information for Caltrain commuters across all 32 stations from San Francisco to Gilroy. Key capabilities include:
+
+- 🚆 **Real-time train delays** via 511.org GTFS-Realtime API
+- 🌤️ **Live weather** for origin and destination stations
+- 🎫 **Event crowding alerts** for 9+ SF venues (Oracle Park, Chase Center, Moscone, etc.)
+- 📍 **All 32 Caltrain stations** with GPS coordinates
+- 💾 **Save up to 5 routes** for quick access
+- 🔄 **Auto-refresh** with optimized caching
+
+**Ready to use immediately** - Works with mock data out of the box, configure API keys for real-time features.
+
 ## Features
 
 - **Station Selection**: Choose from all 32 Caltrain stations with easy swap functionality
 - **Train Schedules**: View next 5 upcoming trains with departure/arrival times and durations
+- **Real-Time Delay Tracking**: See live train delays and on-time status 🚦
+  - Visual indicators for on-time, delayed, early, or cancelled trains
+  - Delay duration displayed in minutes
+  - Color-coded status badges (green = on-time, orange = delayed, red = cancelled)
 - **Weather Information**: See current weather for both origin and destination stations
 - **Event Crowding Alerts**: See upcoming events at major SF venues that may cause crowding 🏟️
   - Oracle Park (SF Giants)
@@ -19,16 +36,20 @@ A Next.js web application that helps Caltrain commuters plan their trips by prov
   - The Fillmore, The Masonic, Warfield Theatre
   - And more concert venues near 4th & King
 - **Saved Routes**: Save up to 5 frequently used routes for quick access
-- **Service Alerts**: Display important service disruptions and notices
-- **Auto-Refresh**: Data updates automatically (trains every 60s, weather every 10 min, events every 30 min)
+- **Service Alerts**: Real-time service disruptions and notices from 511.org
+- **Auto-Refresh**: Data updates automatically (trains every 30s, weather every 10 min, events every 30 min, alerts every 5 min)
 - **Responsive Design**: Mobile-first design that works on all devices
 
 ## Tech Stack
 
 - **Framework**: Next.js 15 (App Router)
 - **Language**: TypeScript
-- **Styling**: Tailwind CSS
-- **APIs**: 511.org Transit API (optional), OpenWeatherMap API (optional)
+- **Styling**: Tailwind CSS v4
+- **APIs**:
+  - 511.org Transit API (GTFS-Realtime for train delays & alerts)
+  - OpenWeatherMap API (weather data)
+  - Ticketmaster Discovery API (event crowding alerts)
+- **Data Format**: GTFS-Realtime Protocol Buffers
 - **Storage**: localStorage for saved routes
 
 ## Getting Started
@@ -75,69 +96,111 @@ npm run dev
 
 5. Open [http://localhost:3000](http://localhost:3000) in your browser
 
+## Real-Time Data Status
+
+| Feature | Current Status | Real Data Available? | API Key Required |
+|---------|---------------|---------------------|------------------|
+| **Train Schedules** | Mock data | ✅ Yes | `TRANSIT_API_KEY` |
+| **Train Delays** | Mock data | ✅ Yes | `TRANSIT_API_KEY` |
+| **Service Alerts** | Mock data | ✅ Yes | `TRANSIT_API_KEY` |
+| **Weather** | Mock data | ✅ Yes | `WEATHER_API_KEY` |
+| **Event Crowding** | No events shown | ✅ Yes | `TICKETMASTER_API_KEY` |
+
+**The app works perfectly with mock data out of the box.** To enable real-time features, configure the API keys below.
+
 ## API Configuration
 
-The app works with **mock data** out of the box. To enable real-time data:
+### Quick Setup Summary
 
-### 511.org Transit API (for train schedules)
+Add these to your `.env.local` file to enable all real-time features:
+
+```bash
+# 511.org - For train delays, schedules, and service alerts
+TRANSIT_API_KEY=your_511_api_key_here
+
+# OpenWeatherMap - For real weather data
+WEATHER_API_KEY=your_openweathermap_api_key_here
+
+# Ticketmaster - For event crowding alerts
+TICKETMASTER_API_KEY=your_consumer_key_here
+```
+
+### Detailed Setup Instructions
+
+### 511.org Transit API (for train schedules and delays)
 
 1. Register for a free API key at [https://511.org/open-data/token](https://511.org/open-data/token)
 2. Add to `.env.local` as `TRANSIT_API_KEY`
-3. Update [app/api/trains/route.ts](app/api/trains/route.ts) to use real API (see comments in file)
+3. The app automatically uses real-time data when the key is present, including:
+   - **Trip Updates**: Real-time delay information for all trains
+   - **Service Alerts**: Live service disruptions and notices
+   - **GTFS-Realtime**: Industry-standard transit feed format
+
+**What you get with TRANSIT_API_KEY configured:**
+- ✅ Real-time train delay tracking (delays shown in minutes)
+- ✅ On-time status indicators (on-time, delayed, cancelled)
+- ✅ Service alert notifications (track maintenance, schedule changes)
+- ✅ Updates every 30 seconds for maximum accuracy
+
+**Without the API key:** The app uses mock train schedules (no real-time delays)
 
 ### OpenWeatherMap API (for weather)
 
 1. Register for a free API key at [https://openweathermap.org/api](https://openweathermap.org/api)
+   - Free tier: 1,000 calls/day, 60 calls/minute
 2. Add to `.env.local` as `WEATHER_API_KEY`
-3. The weather API will automatically use real data when the key is present
+3. The app automatically uses real weather data when the key is present
 
-### Event Data APIs (for venue events - optional, multiple options)
+**What you get with WEATHER_API_KEY configured:**
+- ✅ Real-time weather for each Caltrain station (using GPS coordinates)
+- ✅ Temperature, conditions, wind speed, humidity
+- ✅ Updates every 10 minutes
+- ✅ Automatic fallback to mock data if API fails
 
-**Option 1: Ticketmaster API** (RECOMMENDED - instant approval) ⭐
+**Without the API key:** The app generates realistic mock weather data based on station latitude
+
+### Ticketmaster API (for event crowding alerts)
+
+**RECOMMENDED** - Instant approval, comprehensive coverage ⭐
+
 1. Register at [https://developer.ticketmaster.com/](https://developer.ticketmaster.com/)
 2. Get your **Consumer Key** instantly after registration (no approval wait!)
 3. Copy the **Consumer Key** (NOT the Consumer Secret) to `.env.local` as `TICKETMASTER_API_KEY`
-4. Free tier: 5000 API calls/day
-5. **Covers ALL events**: Sports, concerts, conventions at 9+ SF venues including:
-   - Oracle Park (SF Giants games)
-   - Chase Center (Warriors games, major concerts)
-   - Moscone Center (tech conferences, conventions - Dreamforce, WWDC, etc.)
-   - Bill Graham Civic Auditorium (large concerts)
-   - The Fillmore, The Masonic, Warfield Theatre (music venues)
-   - August Hall, Regency Ballroom (concerts)
+4. Restart dev server
 
-**Option 2: MLB Stats API** (FREE - no key needed!)
-1. No registration required
-2. Perfect for SF Giants games at Oracle Park
-3. Official MLB API: `https://statsapi.mlb.com`
+**What you get with TICKETMASTER_API_KEY configured:**
+- ✅ Real-time events from **9+ major SF venues**:
+  - Oracle Park (SF Giants games)
+  - Chase Center (Warriors games, major concerts)
+  - Moscone Center (tech conferences: Dreamforce, WWDC, etc.)
+  - Bill Graham Civic Auditorium (large concerts)
+  - The Fillmore, The Masonic, Warfield Theatre (music venues)
+  - August Hall, Regency Ballroom (concerts)
+- ✅ Automatic crowd level detection (high/moderate/low)
+- ✅ Smart affected station mapping
+- ✅ Updates every 30 minutes
+- ✅ Free tier: 5,000 API calls/day
 
-**Option 3: NBA API** (FREE - no key needed!)
-1. No registration required
-2. Perfect for Golden State Warriors games at Chase Center
-3. Official NBA stats API
+**Without the API key:** No event crowding alerts are shown
 
-**Option 4: SeatGeek API** (requires approval)
-1. Register at [https://platform.seatgeek.com/](https://platform.seatgeek.com/)
-2. Wait for approval (can take a few days)
-3. Add to `.env.local` as `SEATGEEK_CLIENT_ID` and `SEATGEEK_CLIENT_SECRET`
+### Alternative Event APIs (optional)
 
-See [app/api/events/route.ts](app/api/events/route.ts) for detailed implementation examples for each API.
+**MLB Stats API** (FREE - no key needed!)
+- No registration required
+- Perfect for SF Giants games at Oracle Park only
+- Official MLB API: `https://statsapi.mlb.com`
 
-### Quick Start: Get Your Ticketmaster API Key
+**NBA API** (FREE - no key needed!)
+- No registration required
+- Perfect for Golden State Warriors games at Chase Center only
+- Official NBA stats API
 
-The fastest way to enable event crowding alerts:
+**SeatGeek API** (requires approval)
+- Register at [https://platform.seatgeek.com/](https://platform.seatgeek.com/)
+- Wait for approval (can take a few days)
+- Limited coverage
 
-1. Go to [https://developer.ticketmaster.com/](https://developer.ticketmaster.com/)
-2. Click "Get Your API Key" or "Sign Up"
-3. Create a free account
-4. You'll instantly receive your **Consumer Key** (no waiting for approval!)
-5. Copy the **Consumer Key** (NOT the Consumer Secret)
-6. Add to your `.env.local` file:
-   ```
-   TICKETMASTER_API_KEY=your_consumer_key_here
-   ```
-7. Restart your development server: `npm run dev`
-8. Events will now appear automatically! 🎉
+**Note:** See [app/api/events/route.ts](app/api/events/route.ts) for detailed implementation examples. Ticketmaster is recommended as it provides the most comprehensive coverage with instant approval.
 
 ## Project Structure
 
@@ -145,23 +208,26 @@ The fastest way to enable event crowding alerts:
 caltrain-commuter-app-no-instrumentation/
 ├── app/
 │   ├── api/
-│   │   ├── trains/route.ts      # Train schedule API endpoint
+│   │   ├── trains/route.ts      # Train schedule API endpoint with real-time delays
 │   │   ├── weather/route.ts     # Weather data API endpoint
-│   │   └── events/route.ts      # Venue events API endpoint
+│   │   ├── events/route.ts      # Venue events API endpoint
+│   │   └── alerts/route.ts      # Service alerts API endpoint
 │   ├── layout.tsx               # Root layout with header/footer
 │   ├── page.tsx                 # Main dashboard page
 │   └── globals.css              # Global styles
 ├── components/
 │   ├── StationSelector.tsx      # Origin/destination selector
-│   ├── TrainList.tsx            # Train schedule display
+│   ├── TrainList.tsx            # Train schedule display with delay indicators
 │   ├── WeatherWidget.tsx        # Weather information
 │   ├── VenueEvents.tsx          # Event crowding alerts
-│   ├── ServiceAlerts.tsx        # Service alerts display
+│   ├── ServiceAlerts.tsx        # Real-time service alerts display
 │   └── SavedRoutes.tsx          # Saved routes manager
 ├── lib/
 │   ├── stations.ts              # All 32 Caltrain stations data
 │   ├── types.ts                 # TypeScript interfaces
-│   └── utils.ts                 # Utility functions
+│   ├── utils.ts                 # Utility functions
+│   ├── venues.ts                # Venue data for event tracking
+│   └── gtfs-realtime.ts         # GTFS-Realtime API utilities
 └── public/
     └── icons/                   # Weather icons (if needed)
 ```
@@ -184,12 +250,18 @@ caltrain-commuter-app-no-instrumentation/
 - Auto-refresh functionality
 - Responsive design
 
-### 🚧 Phase 2 - Enhancements (Future)
-- Real-time train tracking
-- Push notifications
-- Historical delay data
-- Bike car availability
+### ✅ Phase 2 - Real-Time Features (Complete)
+- ✅ Real-time train delay tracking via GTFS-Realtime
+- ✅ Service alerts from 511.org API
+- ✅ Event crowding alerts for 9+ SF venues
+- ✅ Visual delay indicators and status badges
+
+### 🚧 Phase 3 - Advanced Features (Future)
+- Push notifications for delays
+- Historical delay analytics
+- Bike car availability tracking
 - Multi-leg journey planning
+- Trip planning with transfers
 
 ## Browser Support
 
@@ -225,8 +297,9 @@ ISC
 ## Acknowledgments
 
 - Built following the [Product Requirements Document](prd.md)
-- Train data powered by Caltrain and 511.org
+- Real-time train data powered by Caltrain and 511.org GTFS-Realtime feeds
 - Weather data powered by OpenWeatherMap
+- Event data powered by Ticketmaster Discovery API
 - Icons from Heroicons
 
 ## Support
@@ -235,4 +308,43 @@ For issues and questions, please open an issue on GitHub.
 
 ---
 
-**Note**: This app currently uses mock data for train schedules. Configure API keys for real-time data.
+## How Real-Time Features Work
+
+### Train Delay Tracking
+
+The app integrates with **511.org's GTFS-Realtime API** to provide accurate train delay information:
+
+1. **Trip Updates Feed**: Fetches real-time delay data every 30 seconds from 511.org
+2. **Protocol Buffers**: Uses industry-standard GTFS-Realtime format for efficient data transfer
+3. **Delay Detection**: Compares scheduled vs. actual times at each stop
+4. **Visual Indicators**:
+   - 🟢 Green badge = On time
+   - 🟠 Orange badge = Delayed (shows delay in minutes)
+   - 🔴 Red badge = Cancelled
+5. **Service Alerts**: Displays system-wide disruptions and maintenance notices
+
+### Weather Data
+
+- Fetches current weather from **OpenWeatherMap API** using GPS coordinates for each station
+- Updates every 10 minutes
+- Displays temperature, conditions, wind speed, and humidity
+- Converts metric to imperial units (Celsius → Fahrenheit, m/s → mph)
+
+### Event Crowding Alerts
+
+- Queries **Ticketmaster Discovery API** for events at 9+ SF venues
+- Fetches events for the current day in parallel for all venues
+- Intelligent crowd level detection based on:
+  - Venue capacity (Oracle Park, Chase Center = high)
+  - Event type (sports games, major concerts)
+  - Ticket prices (expensive = high crowd)
+  - Special conventions (Dreamforce, WWDC at Moscone)
+- Updates every 30 minutes
+
+### Data Flow Architecture
+
+```
+User Request → Next.js API Route → External API → Data Processing → Cache (30s-30min) → User Response
+```
+
+**Note**: All real-time features gracefully fall back to mock data if API keys are not configured or if APIs fail. The app is fully functional without any API keys.

@@ -142,6 +142,37 @@ export default function TrainList({ originId, destinationId }: TrainListProps) {
                     {formatDuration(train.duration)}
                   </div>
                 </div>
+
+                {/* Delay status indicator */}
+                {train.status && train.status !== 'on-time' && (
+                  <div className="mt-2">
+                    {train.status === 'cancelled' ? (
+                      <div className="inline-flex items-center gap-1 bg-red-100 text-red-700 text-xs font-semibold px-2 py-1 rounded">
+                        <span>❌</span>
+                        <span>CANCELLED</span>
+                      </div>
+                    ) : train.delay && train.delay > 0 ? (
+                      <div className="inline-flex items-center gap-1 bg-orange-100 text-orange-700 text-xs font-semibold px-2 py-1 rounded">
+                        <span>⚠️</span>
+                        <span>Delayed {train.delay} min</span>
+                      </div>
+                    ) : train.delay && train.delay < 0 ? (
+                      <div className="inline-flex items-center gap-1 bg-green-100 text-green-700 text-xs font-semibold px-2 py-1 rounded">
+                        <span>✓</span>
+                        <span>Early {Math.abs(train.delay)} min</span>
+                      </div>
+                    ) : null}
+                  </div>
+                )}
+
+                {train.status === 'on-time' && (
+                  <div className="mt-2">
+                    <div className="inline-flex items-center gap-1 bg-green-50 text-green-600 text-xs font-semibold px-2 py-1 rounded">
+                      <span>✓</span>
+                      <span>On Time</span>
+                    </div>
+                  </div>
+                )}
               </div>
 
               <div className="text-right">
