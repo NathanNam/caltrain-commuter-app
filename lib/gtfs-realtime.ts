@@ -83,13 +83,17 @@ export async function fetchTripUpdates(): Promise<TripUpdate[]> {
             arrival: stu.arrival
               ? {
                   delay: stu.arrival.delay || 0,
-                  time: stu.arrival.time?.toNumber() || 0,
+                  time: typeof stu.arrival.time === 'number'
+                    ? stu.arrival.time
+                    : (stu.arrival.time?.toNumber() || 0),
                 }
               : undefined,
             departure: stu.departure
               ? {
                   delay: stu.departure.delay || 0,
-                  time: stu.departure.time?.toNumber() || 0,
+                  time: typeof stu.departure.time === 'number'
+                    ? stu.departure.time
+                    : (stu.departure.time?.toNumber() || 0),
                 }
               : undefined,
             scheduleRelationship: stu.scheduleRelationship?.toString(),
