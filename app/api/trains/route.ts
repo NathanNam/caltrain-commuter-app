@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { Train } from '@/lib/types';
 import { getStationById } from '@/lib/stations';
-import { fetchTripUpdates, getStopDelay } from '@/lib/gtfs-realtime';
+import { fetchTripUpdates, getTripDelay } from '@/lib/gtfs-realtime';
 import { getScheduledTrains } from '@/lib/gtfs-static';
 
 export async function GET(request: NextRequest) {
@@ -55,16 +55,36 @@ export async function GET(request: NextRequest) {
   const hasRealDelays = tripUpdates.length > 0;
 
   if (hasRealDelays) {
+    console.log(`Fetched ${tripUpdates.length} trip updates from GTFS-Realtime`);
+
     // Use real delay data from 511.org
+    // Match delays by trip_id for train-specific accuracy
+    let matchedCount = 0;
+    let unmatchedCount = 0;
+
     for (const train of trains) {
-      const delayInfo = getStopDelay(tripUpdates, originStation.code);
-      if (delayInfo) {
-        train.delay = delayInfo.delay;
-        train.status = delayInfo.status;
+      if (train.tripId) {
+        const delayInfo = getTripDelay(tripUpdates, train.tripId);
+        if (delayInfo) {
+          train.delay = delayInfo.delay;
+          train.status = delayInfo.status;
+          matchedCount++;
+          console.log(`Train ${train.trainNumber} (trip_id: ${train.tripId}): ${delayInfo.status}, delay: ${delayInfo.delay} min`);
+        } else {
+          // No delay info found for this trip - assume on-time
+          train.status = 'on-time';
+          train.delay = 0;
+          unmatchedCount++;
+          console.log(`Train ${train.trainNumber} (trip_id: ${train.tripId}): NO MATCH in GTFS-Realtime data - assuming on-time`);
+        }
       } else {
+        // Fallback for trains without trip_id (mock data)
         train.status = 'on-time';
+        train.delay = 0;
       }
     }
+
+    console.log(`Delay matching summary: ${matchedCount} matched, ${unmatchedCount} unmatched out of ${trains.length} trains`);
   } else {
     // Add mock delay data when no API key
     console.log('Using mock delay data - configure TRANSIT_API_KEY for real delays');

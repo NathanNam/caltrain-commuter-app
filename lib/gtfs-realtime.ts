@@ -182,12 +182,23 @@ function mapSeverity(severity: string | undefined): 'info' | 'warning' | 'critic
 
 /**
  * Get delay for a specific stop on a specific trip
+ *
+ * @param updates - Array of trip updates from GTFS-Realtime feed
+ * @param stopId - The GTFS stop_id to match
+ * @param tripId - The GTFS trip_id to match (optional - if not provided, matches any trip at the stop)
+ * @returns Delay information for the specific trip at the specific stop, or null if not found
  */
 export function getStopDelay(
   updates: TripUpdate[],
-  stopId: string
+  stopId: string,
+  tripId?: string
 ): { delay: number; status: 'on-time' | 'delayed' | 'cancelled' } | null {
   for (const update of updates) {
+    // If tripId is provided, only match this specific trip
+    if (tripId && update.tripId !== tripId) {
+      continue;
+    }
+
     for (const stu of update.stopTimeUpdates) {
       if (stu.stopId === stopId) {
         const delay = stu.departure?.delay || stu.arrival?.delay || 0;
@@ -196,12 +207,65 @@ export function getStopDelay(
         let status: 'on-time' | 'delayed' | 'cancelled' = 'on-time';
         if (stu.scheduleRelationship === 'SKIPPED' || stu.scheduleRelationship === 'CANCELED') {
           status = 'cancelled';
-        } else if (Math.abs(delayMinutes) >= 3) {
+        } else if (Math.abs(delayMinutes) >= 1) {
+          // Show delays of 1 minute or more
           status = 'delayed';
         }
 
         return { delay: delayMinutes, status };
       }
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Get delay for a specific trip (any stop on the trip)
+ * This is useful when you know the trip_id but don't have the exact GTFS stop_id
+ *
+ * @param updates - Array of trip updates from GTFS-Realtime feed
+ * @param tripId - The GTFS trip_id to match
+ * @returns Delay information for the trip, or null if not found
+ */
+export function getTripDelay(
+  updates: TripUpdate[],
+  tripId: string
+): { delay: number; status: 'on-time' | 'delayed' | 'cancelled' } | null {
+  for (const update of updates) {
+    if (update.tripId === tripId) {
+      if (update.stopTimeUpdates.length === 0) {
+        return null;
+      }
+
+      // Find the maximum delay across all stops in this trip
+      // This captures delays that accumulate during the journey
+      let maxDelaySeconds = 0;
+      let isCancelled = false;
+
+      for (const stop of update.stopTimeUpdates) {
+        if (stop.scheduleRelationship === 'SKIPPED' || stop.scheduleRelationship === 'CANCELED') {
+          isCancelled = true;
+          break;
+        }
+
+        const stopDelay = stop.departure?.delay || stop.arrival?.delay || 0;
+        if (Math.abs(stopDelay) > Math.abs(maxDelaySeconds)) {
+          maxDelaySeconds = stopDelay;
+        }
+      }
+
+      const delayMinutes = Math.round(maxDelaySeconds / 60);
+
+      let status: 'on-time' | 'delayed' | 'cancelled' = 'on-time';
+      if (isCancelled) {
+        status = 'cancelled';
+      } else if (Math.abs(delayMinutes) >= 1) {
+        // Show delays of 1 minute or more
+        status = 'delayed';
+      }
+
+      return { delay: delayMinutes, status };
     }
   }
 

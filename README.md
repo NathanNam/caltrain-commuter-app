@@ -454,17 +454,24 @@ The app integrates with **511.org's GTFS-Realtime API** to provide accurate trai
 
 1. **Trip Updates Feed**: Fetches real-time delay data every 30 seconds from 511.org
 2. **Protocol Buffers**: Uses industry-standard GTFS-Realtime format for efficient data transfer
-3. **Schedule Awareness**: Automatically handles different schedules:
+3. **Train-Specific Matching**: Each train's delay is matched by GTFS trip_id for accuracy
+   - Ensures Train 421's delay is shown for Train 421 (not confused with other trains at the same station)
+   - Checks maximum delay across all stops in the trip (captures delays that accumulate during the journey)
+   - Matches delay information as reported by 511.org's official feed
+4. **Schedule Awareness**: Automatically handles different schedules:
    - **Weekday schedule**: More frequent trains during peak hours (6-9am, 4-7pm)
    - **Weekend schedule**: Reduced service on Saturdays and Sundays
    - **Holiday schedule**: Special service on major US holidays (New Year's, Memorial Day, Independence Day, Labor Day, Thanksgiving, Christmas)
    - Real-time API automatically provides correct schedule based on current date
-4. **Delay Detection**: Compares scheduled vs. actual times at each stop
-5. **Visual Indicators**:
-   - 🟢 Green badge = On time
-   - 🟠 Orange badge = Delayed (shows delay in minutes)
+5. **Delay Detection**:
+   - Compares scheduled vs. actual times at each stop
+   - **Delay threshold**: Shows trains as "delayed" when 1 minute or more late
+   - Uses the maximum delay across all stops to capture delays accumulated during the journey
+6. **Visual Indicators**:
+   - 🟢 Green badge = On time (0 minutes delay)
+   - 🟠 Orange badge = Delayed (1+ minutes - shows exact delay)
    - 🔴 Red badge = Cancelled
-6. **Service Alerts**: Displays system-wide disruptions and maintenance notices
+7. **Service Alerts**: Displays system-wide disruptions and maintenance notices
 
 ### Weather Data
 
@@ -501,11 +508,16 @@ The app uses a sophisticated two-layer approach for maximum accuracy:
 
 **Layer 2: GTFS-Realtime (Live Updates)**
 1. Fetches live trip updates from 511.org every 30 seconds
-2. Applies delays to scheduled trains
-3. Updates train status (on-time, delayed, cancelled)
-4. Combines with Layer 1 for complete picture
+2. **Matches delays by trip_id** to ensure each train gets its own accurate delay status
+3. **Checks maximum delay** across all stops in each trip (not just the first stop)
+4. Applies delays to scheduled trains based on exact trip matching
+5. Updates train status (on-time, delayed, cancelled) per-train
+   - Trains with 0 minutes delay → "On time"
+   - Trains with 1+ minutes delay → "Delayed" (shows exact minutes)
+   - Cancelled trains → "Cancelled"
+6. Combines with Layer 1 for complete picture
 
-**Result**: Users see real Caltrain train numbers and schedule times, enhanced with live delay information.
+**Result**: Users see real Caltrain train numbers and schedule times, enhanced with train-specific live delay information from 511.org's official GTFS-Realtime feed.
 
 ### Data Flow Architecture
 

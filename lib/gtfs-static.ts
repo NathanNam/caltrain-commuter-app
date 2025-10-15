@@ -541,6 +541,7 @@ export async function getScheduledTrains(
 
     trains.push({
       trainNumber: trip.trip_short_name || trip.trip_id,
+      tripId: trip.trip_id, // Store trip_id for real-time delay matching
       direction: isNorthbound ? 'Northbound' : 'Southbound',
       departureTime: departureDate.toISOString(),
       arrivalTime: arrivalDate.toISOString(),

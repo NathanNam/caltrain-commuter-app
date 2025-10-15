@@ -12,6 +12,7 @@ export interface Station {
 
 export interface Train {
   trainNumber: string;
+  tripId?: string; // GTFS trip_id for real-time delay matching
   direction: 'Northbound' | 'Southbound';
   departureTime: string;
   arrivalTime: string;
