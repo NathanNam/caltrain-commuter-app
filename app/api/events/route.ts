@@ -197,8 +197,15 @@ async function fetchTicketmasterEvents(date: string): Promise<VenueEvent[]> {
       if (!result || !result._embedded?.events) continue;
 
       for (const event of result._embedded.events) {
-        const eventType = determineEventType(event);
         const venueName = event._embedded?.venues?.[0]?.name || 'Unknown Venue';
+
+        // FILTER: Only include SF Bay Area venues
+        if (!isSFBayAreaVenue(venueName)) {
+          console.log(`Filtered out non-SF Bay Area event: ${event.name} at ${venueName}`);
+          continue;
+        }
+
+        const eventType = determineEventType(event);
 
         events.push({
           id: event.id,
@@ -241,6 +248,43 @@ function determineEventType(event: any): 'baseball' | 'basketball' | 'concert' |
   return 'other';
 }
 
+// Helper: Check if venue is in SF Bay Area
+function isSFBayAreaVenue(venueName: string): boolean {
+  const venue = venueName.toLowerCase();
+
+  // List of known SF Bay Area venues
+  const sfVenues = [
+    'oracle park',
+    'chase center',
+    'bill graham',
+    'the masonic',
+    'the fillmore',
+    'warfield',
+    'august hall',
+    'regency ballroom',
+    'moscone center',
+    'sap center',
+    'levis stadium',
+    'levi\'s stadium',
+    'san francisco',
+    'oakland',
+    'berkeley',
+    'san jose',
+    'santa clara'
+  ];
+
+  // Reject venues that are clearly not in SF Bay Area
+  if (venue.includes('los angeles') ||
+      venue.includes('crypto.com arena') ||
+      venue.includes('staples center') ||
+      venue.includes('forum') && venue.includes('inglewood')) {
+    return false;
+  }
+
+  // Accept if it matches any known SF venue
+  return sfVenues.some(sfVenue => venue.includes(sfVenue));
+}
+
 // Helper: Determine affected stations based on venue
 function determineAffectedStations(venueName: string): string[] {
   const venue = venueName.toLowerCase();
@@ -253,6 +297,16 @@ function determineAffectedStations(venueName: string): string[] {
   // Chase Center affects SF and 22nd
   if (venue.includes('chase center')) {
     return ['sf', '22nd'];
+  }
+
+  // SAP Center affects San Jose Diridon
+  if (venue.includes('sap center')) {
+    return ['diridon'];
+  }
+
+  // Levi's Stadium affects Santa Clara station
+  if (venue.includes('levi') || venue.includes('levis stadium')) {
+    return ['santa-clara'];
   }
 
   // Most other SF venues primarily affect 4th & King

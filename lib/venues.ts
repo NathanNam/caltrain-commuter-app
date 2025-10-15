@@ -72,6 +72,22 @@ export const venues: Venue[] = [
     name: 'Moscone Center',
     nearestStation: 'sf', // 4th & King - walkable or one stop on Muni
     address: '747 Howard St, San Francisco, CA 94103'
+  },
+
+  // SAP Center - San Jose Sharks & Concerts
+  {
+    id: 'sap-center',
+    name: 'SAP Center',
+    nearestStation: 'diridon', // San Jose Diridon - walking distance
+    address: '525 W Santa Clara St, San Jose, CA 95113'
+  },
+
+  // Levi\'s Stadium - San Francisco 49ers & Major concerts
+  {
+    id: 'levis-stadium',
+    name: 'Levi\'s Stadium',
+    nearestStation: 'santa-clara', // Santa Clara station - walking distance
+    address: '4900 Marie P DeBartolo Way, Santa Clara, CA 95054'
   }
 ];
 
@@ -84,9 +100,11 @@ export const ticketmasterVenueIds = {
   'the-masonic': 'KovZpZAE6F6A',
   'the-fillmore': 'KovZpZAEAleA',
   'warfield': 'KovZpZAEAv6A',
-  'august-hall': 'KovZ9177J2k', // Verify this ID
+  'august-hall': 'KovZ9177J2k',
   'regency-ballroom': 'KovZpZAEAlFA',
-  'moscone-center': 'KovZpZAEAaIA' // Moscone Center - conventions & tech events
+  'moscone-center': 'KovZpZAEAaIA',
+  'sap-center': 'KovZpZAFtJdA', // SAP Center - San Jose Sharks & concerts
+  'levis-stadium': 'KovZpZAFnIEA' // Levi's Stadium - 49ers & major concerts
 };
 
 // Helper function to get venue by ID

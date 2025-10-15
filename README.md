@@ -49,12 +49,14 @@ This app provides comprehensive real-time information for Caltrain commuters acr
   - Delay duration displayed in minutes
   - Color-coded status badges (green = on-time, orange = delayed, red = cancelled)
 - **Weather Information**: See current weather for both origin and destination stations
-- **Event Crowding Alerts**: See upcoming events at major SF venues that may cause crowding 🏟️
+- **Event Crowding Alerts**: See upcoming events at major SF Bay Area venues that may cause crowding 🏟️
   - **Automatically updated** - Moscone events fetched at runtime every 24 hours
-  - Oracle Park (SF Giants)
-  - Chase Center (Warriors, Concerts)
+  - Oracle Park (SF Giants) - affects SF, 22nd, Bayshore stations
+  - Chase Center (Warriors, Concerts) - affects SF, 22nd stations
   - Moscone Center (Tech conferences, conventions - automatically fetched!)
     - Dreamforce, Microsoft Ignite, TechCrunch Disrupt, PyTorch Conference, and more
+  - SAP Center (San Jose Sharks, Concerts) - affects Diridon station
+  - Levi's Stadium (SF 49ers, Major Concerts) - affects Santa Clara station
   - Bill Graham Civic Auditorium
   - The Fillmore, The Masonic, Warfield Theatre
   - And more concert venues near 4th & King
@@ -203,15 +205,19 @@ TICKETMASTER_API_KEY=your_consumer_key_here
 4. Restart dev server
 
 **What you get with TICKETMASTER_API_KEY configured:**
-- ✅ Real-time events from **9+ major SF venues**:
-  - Oracle Park (SF Giants games)
-  - Chase Center (Warriors games, major concerts)
-  - Moscone Center (tech conferences: Dreamforce, WWDC, etc.)
-  - Bill Graham Civic Auditorium (large concerts)
-  - The Fillmore, The Masonic, Warfield Theatre (music venues)
-  - August Hall, Regency Ballroom (concerts)
+- ✅ Real-time events from **11+ major SF Bay Area venues**:
+  - **San Francisco:**
+    - Oracle Park (SF Giants games)
+    - Chase Center (Warriors games, major concerts)
+    - Moscone Center (tech conferences: Dreamforce, WWDC, etc.)
+    - Bill Graham Civic Auditorium (large concerts)
+    - The Fillmore, The Masonic, Warfield Theatre (music venues)
+    - August Hall, Regency Ballroom (concerts)
+  - **South Bay:**
+    - SAP Center (San Jose Sharks games, concerts)
+    - Levi's Stadium (SF 49ers games, major concerts)
 - ✅ Automatic crowd level detection (high/moderate/low)
-- ✅ Smart affected station mapping
+- ✅ Smart affected station mapping (shows which Caltrain stations are impacted)
 - ✅ Updates every 30 minutes
 - ✅ Free tier: 5,000 API calls/day
 
@@ -469,13 +475,17 @@ The app integrates with **511.org's GTFS-Realtime API** to provide accurate trai
 
 ### Event Crowding Alerts
 
-- Queries **Ticketmaster Discovery API** for events at 9+ SF venues
+- Queries **Ticketmaster Discovery API** for events at 11+ SF Bay Area venues
 - Fetches events for the current day in parallel for all venues
+- **Geographic filtering**: Only includes SF Bay Area venues (filters out LA, etc.)
 - Intelligent crowd level detection based on:
-  - Venue capacity (Oracle Park, Chase Center = high)
+  - Venue capacity (Oracle Park, Chase Center, Levi's Stadium, SAP Center = high)
   - Event type (sports games, major concerts)
   - Ticket prices (expensive = high crowd)
   - Special conventions (Dreamforce, WWDC at Moscone)
+- **Smart station mapping**: Shows which Caltrain stations are affected by each event
+  - SF venues → 4th & King, 22nd Street
+  - South Bay venues → Diridon (SAP Center), Santa Clara (Levi's Stadium)
 - Updates every 30 minutes
 
 ### Train Schedule Architecture
