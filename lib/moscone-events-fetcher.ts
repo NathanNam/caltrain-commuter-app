@@ -169,6 +169,9 @@ function parseEventsFromHTML(html: string): MosconeEvent[] {
       const eventStartDate = new Date(startDate);
       const eventEndDate = new Date(endDate);
 
+      // Set end date to end of day (23:59:59) to include events happening on the end date
+      eventEndDate.setUTCHours(23, 59, 59, 999);
+
       // Include events that are currently happening or will happen in the next 6 months
       // An event is relevant if it hasn't ended yet (endDate >= today) and starts within 6 months
       if (eventEndDate >= today && eventStartDate <= sixMonthsFromNow) {
