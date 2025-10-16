@@ -3,6 +3,9 @@ import { VenueEvent } from '@/lib/types';
 import { ticketmasterVenueIds } from '@/lib/venues';
 import { getMosconeEventsForDate as getMosconeEventsRuntime } from '@/lib/moscone-events-fetcher';
 import { getChaseCenterEventsForDate } from '@/lib/chase-center-events';
+import { trace, SpanStatusCode, Span } from '@opentelemetry/api';
+import { SeverityNumber } from '@opentelemetry/api-logs';
+import { logger, tracer, meter } from '@/otel-server';
 
 // This API fetches events from multiple venues near Caltrain stations
 // Supports: Oracle Park, Chase Center, Bill Graham, The Fillmore, and more
@@ -10,95 +13,224 @@ import { getChaseCenterEventsForDate } from '@/lib/chase-center-events';
 // Moscone events are automatically fetched at runtime from SF Travel (cached for 24h)
 // Chase Center events are manually maintained in chase-center-events.ts
 
+// Initialize metrics
+const eventsRequestCounter = meter.createCounter('events_api_requests_total', {
+  description: 'Total number of requests to the events API',
+});
+
+const eventsRequestDuration = meter.createHistogram('events_api_request_duration_ms', {
+  description: 'Duration of events API requests in milliseconds',
+});
+
 export async function GET(request: NextRequest) {
-  const searchParams = request.nextUrl.searchParams;
-  const date = searchParams.get('date') || new Date().toISOString().split('T')[0];
-  const dateObj = new Date(date);
+  const startTime = Date.now();
 
-  // Fetch Moscone events at runtime (automatically fetched from SF Travel, cached for 24h)
-  const mosconeEvents = await getMosconeEventsRuntime(dateObj);
-
-  // Get Chase Center events from manually maintained list
-  const chaseCenterEvents = getChaseCenterEventsForDate(dateObj);
-
-  // Check if Ticketmaster API key is configured
-  if (process.env.TICKETMASTER_API_KEY) {
+  return tracer.startActiveSpan('events.api.get', async (span: Span) => {
     try {
-      const ticketmasterEvents = await fetchTicketmasterEvents(date);
+      const searchParams = request.nextUrl.searchParams;
+      const date = searchParams.get('date') || new Date().toISOString().split('T')[0];
+      const dateObj = new Date(date);
 
-      // Combine Ticketmaster events with manually maintained events
-      // Remove duplicates by checking event names and venues
-      const allEvents = [...ticketmasterEvents];
+      span.setAttributes({
+        'http.method': 'GET',
+        'http.route': '/api/events',
+        'events.date': date,
+      });
 
-      // Add Moscone events if not already in Ticketmaster results
+      // Fetch Moscone events at runtime (automatically fetched from SF Travel, cached for 24h)
+      const mosconeEvents = await getMosconeEventsRuntime(dateObj);
+
+      // Get Chase Center events from manually maintained list
+      const chaseCenterEvents = getChaseCenterEventsForDate(dateObj);
+
+      span.setAttributes({
+        'events.moscone_count': mosconeEvents.length,
+        'events.chase_center_count': chaseCenterEvents.length,
+      });
+
+      // Check if Ticketmaster API key is configured
+      const hasTicketmasterKey = !!process.env.TICKETMASTER_API_KEY;
+
+      span.setAttributes({
+        'events.has_ticketmaster_key': hasTicketmasterKey,
+      });
+
+      if (hasTicketmasterKey) {
+        try {
+          const ticketmasterEvents = await fetchTicketmasterEvents(date);
+
+          // Combine Ticketmaster events with manually maintained events
+          // Remove duplicates by checking event names and venues
+          const allEvents = [...ticketmasterEvents];
+
+          // Add Moscone events if not already in Ticketmaster results
+          for (const mosconeEvent of mosconeEvents) {
+            const isDuplicate = ticketmasterEvents.some(
+              e => e.venueName.toLowerCase().includes('moscone') &&
+                   e.eventName === mosconeEvent.eventName
+            );
+            if (!isDuplicate) {
+              allEvents.push(mosconeEvent);
+            }
+          }
+
+          // Add Chase Center events if not already in Ticketmaster results
+          for (const chaseCenterEvent of chaseCenterEvents) {
+            const isDuplicate = ticketmasterEvents.some(
+              e => e.venueName.toLowerCase().includes('chase') &&
+                   e.eventName === chaseCenterEvent.eventName
+            );
+            if (!isDuplicate) {
+              allEvents.push(chaseCenterEvent);
+            }
+          }
+
+          const duration = Date.now() - startTime;
+
+          span.setAttributes({
+            'events.total_count': allEvents.length,
+            'events.ticketmaster_count': ticketmasterEvents.length,
+            'events.is_mock_data': false,
+            'http.status_code': 200,
+          });
+
+          span.setStatus({ code: SpanStatusCode.OK });
+
+          logger.emit({
+            severityNumber: SeverityNumber.INFO,
+            severityText: 'INFO',
+            body: 'Events API request completed with real Ticketmaster data',
+            attributes: {
+              date,
+              total_events: allEvents.length,
+              ticketmaster_events: ticketmasterEvents.length,
+              moscone_events: mosconeEvents.length,
+              chase_center_events: chaseCenterEvents.length,
+              duration_ms: duration
+            },
+          });
+
+          eventsRequestCounter.add(1, { status: 'success', data_type: 'real' });
+          eventsRequestDuration.record(duration, { status: 'success', data_type: 'real' });
+
+          return NextResponse.json({
+            events: allEvents,
+            isMockData: false
+          }, {
+            headers: {
+              'Cache-Control': 'public, s-maxage=1800, stale-while-revalidate=3600' // Cache for 30 min
+            }
+          });
+        } catch (error) {
+          span.recordException(error as Error);
+
+          logger.emit({
+            severityNumber: SeverityNumber.ERROR,
+            severityText: 'ERROR',
+            body: 'Ticketmaster API error, falling back to mock data',
+            attributes: {
+              date,
+              error: (error as Error).message
+            },
+          });
+          // Fall back to mock data + Moscone events if API fails
+        }
+      }
+
+      // If no API key or API fails, return mock data + manually maintained events
+      logger.emit({
+        severityNumber: SeverityNumber.INFO,
+        severityText: 'INFO',
+        body: 'Using mock event data - configure TICKETMASTER_API_KEY for real events',
+        attributes: { date },
+      });
+
+      const mockEvents = generateMockEvents(date);
+
+      // Combine mock events with manually maintained events (avoid duplicates)
+      const allEvents = [...mockEvents];
+
+      // Add Moscone events
       for (const mosconeEvent of mosconeEvents) {
-        const isDuplicate = ticketmasterEvents.some(
-          e => e.venueName.toLowerCase().includes('moscone') &&
-               e.eventName === mosconeEvent.eventName
+        const isDuplicate = mockEvents.some(
+          e => e.venueName === 'Moscone Center' && e.eventName === mosconeEvent.eventName
         );
         if (!isDuplicate) {
           allEvents.push(mosconeEvent);
         }
       }
 
-      // Add Chase Center events if not already in Ticketmaster results
+      // Add Chase Center events
       for (const chaseCenterEvent of chaseCenterEvents) {
-        const isDuplicate = ticketmasterEvents.some(
-          e => e.venueName.toLowerCase().includes('chase') &&
-               e.eventName === chaseCenterEvent.eventName
+        const isDuplicate = mockEvents.some(
+          e => e.venueName === 'Chase Center' && e.eventName === chaseCenterEvent.eventName
         );
         if (!isDuplicate) {
           allEvents.push(chaseCenterEvent);
         }
       }
 
+      const duration = Date.now() - startTime;
+
+      span.setAttributes({
+        'events.total_count': allEvents.length,
+        'events.mock_count': mockEvents.length,
+        'events.is_mock_data': true,
+        'http.status_code': 200,
+      });
+
+      span.setStatus({ code: SpanStatusCode.OK });
+
+      logger.emit({
+        severityNumber: SeverityNumber.INFO,
+        severityText: 'INFO',
+        body: 'Events API request completed with mock data',
+        attributes: {
+          date,
+          total_events: allEvents.length,
+          mock_events: mockEvents.length,
+          moscone_events: mosconeEvents.length,
+          chase_center_events: chaseCenterEvents.length,
+          duration_ms: duration
+        },
+      });
+
+      eventsRequestCounter.add(1, { status: 'success', data_type: 'mock' });
+      eventsRequestDuration.record(duration, { status: 'success', data_type: 'mock' });
+
       return NextResponse.json({
         events: allEvents,
-        isMockData: false
+        isMockData: true
       }, {
         headers: {
           'Cache-Control': 'public, s-maxage=1800, stale-while-revalidate=3600' // Cache for 30 min
         }
       });
     } catch (error) {
-      console.error('Ticketmaster API error:', error);
-      // Fall back to mock data + Moscone events if API fails
-    }
-  }
+      const duration = Date.now() - startTime;
 
-  // If no API key or API fails, return mock data + manually maintained events
-  console.log('Using mock event data - configure TICKETMASTER_API_KEY for real events');
-  const mockEvents = generateMockEvents(date);
+      span.setStatus({ code: SpanStatusCode.ERROR, message: (error as Error).message });
+      span.recordException(error as Error);
 
-  // Combine mock events with manually maintained events (avoid duplicates)
-  const allEvents = [...mockEvents];
+      logger.emit({
+        severityNumber: SeverityNumber.ERROR,
+        severityText: 'ERROR',
+        body: 'Events API request failed',
+        attributes: {
+          error: (error as Error).message,
+          duration_ms: duration
+        },
+      });
 
-  // Add Moscone events
-  for (const mosconeEvent of mosconeEvents) {
-    const isDuplicate = mockEvents.some(
-      e => e.venueName === 'Moscone Center' && e.eventName === mosconeEvent.eventName
-    );
-    if (!isDuplicate) {
-      allEvents.push(mosconeEvent);
-    }
-  }
+      eventsRequestCounter.add(1, { status: 'error' });
+      eventsRequestDuration.record(duration, { status: 'error' });
 
-  // Add Chase Center events
-  for (const chaseCenterEvent of chaseCenterEvents) {
-    const isDuplicate = mockEvents.some(
-      e => e.venueName === 'Chase Center' && e.eventName === chaseCenterEvent.eventName
-    );
-    if (!isDuplicate) {
-      allEvents.push(chaseCenterEvent);
-    }
-  }
-
-  return NextResponse.json({
-    events: allEvents,
-    isMockData: true
-  }, {
-    headers: {
-      'Cache-Control': 'public, s-maxage=1800, stale-while-revalidate=3600' // Cache for 30 min
+      return NextResponse.json(
+        { error: 'Internal server error' },
+        { status: 500 }
+      );
+    } finally {
+      span.end();
     }
   });
 }

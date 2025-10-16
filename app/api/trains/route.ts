@@ -3,59 +3,165 @@ import { Train } from '@/lib/types';
 import { getStationById } from '@/lib/stations';
 import { fetchTripUpdates, getTripDelay } from '@/lib/gtfs-realtime';
 import { getScheduledTrains } from '@/lib/gtfs-static';
+import { trace, SpanStatusCode, Span } from '@opentelemetry/api';
+import { SeverityNumber } from '@opentelemetry/api-logs';
+import { logger, tracer, meter } from '@/otel-server';
+
+// Initialize metrics
+const requestCounter = meter.createCounter('trains_api_requests_total', {
+  description: 'Total number of requests to the trains API',
+});
+
+const requestDuration = meter.createHistogram('trains_api_request_duration_ms', {
+  description: 'Duration of trains API requests in milliseconds',
+});
 
 export async function GET(request: NextRequest) {
-  const searchParams = request.nextUrl.searchParams;
-  const origin = searchParams.get('origin');
-  const destination = searchParams.get('destination');
+  const startTime = Date.now();
 
-  if (!origin || !destination) {
-    return NextResponse.json(
-      { error: 'Origin and destination are required' },
-      { status: 400 }
-    );
-  }
+  return tracer.startActiveSpan('trains.api.get', async (span: Span) => {
+    try {
+      const searchParams = request.nextUrl.searchParams;
+      const origin = searchParams.get('origin');
+      const destination = searchParams.get('destination');
 
-  // Validate stations exist
-  const originStation = getStationById(origin);
-  const destinationStation = getStationById(destination);
+      span.setAttributes({
+        'http.method': 'GET',
+        'http.route': '/api/trains',
+        'trains.origin': origin || '',
+        'trains.destination': destination || '',
+      });
 
-  if (!originStation || !destinationStation) {
-    return NextResponse.json(
-      { error: 'Invalid station ID' },
-      { status: 400 }
-    );
-  }
+      if (!origin || !destination) {
+        span.setStatus({ code: SpanStatusCode.ERROR, message: 'Missing required parameters' });
+        span.recordException(new Error('Origin and destination are required'));
 
-  // Get GTFS scheduled trains (uses local files if no API key)
-  let trains: Train[] = [];
-  let usingMockSchedule = false;
+        logger.emit({
+          severityNumber: SeverityNumber.WARN,
+          severityText: 'WARN',
+          body: 'Trains API request missing required parameters',
+          attributes: { origin, destination },
+        });
 
-  try {
-    trains = await getScheduledTrains(origin, destination);
-    console.log(`API route received ${trains.length} trains from GTFS`);
-    if (trains.length > 0) {
-      console.log('First train:', trains[0]);
-    }
-  } catch (error) {
-    console.error('Error fetching GTFS schedule:', error);
-  }
+        requestCounter.add(1, { status: 'error', error_type: 'missing_params' });
 
-  // Only use generateMockTrains as absolute fallback if GTFS fails
-  if (trains.length === 0) {
-    console.warn('GTFS schedule unavailable, using fallback mock data');
-    trains = generateMockTrains(origin, destination);
-    usingMockSchedule = true;
-  } else {
-    console.log(`Using ${trains.length} real GTFS trains`);
-  }
+        return NextResponse.json(
+          { error: 'Origin and destination are required' },
+          { status: 400 }
+        );
+      }
 
-  // Fetch real-time trip updates and enhance trains with delay information
-  const tripUpdates = await fetchTripUpdates();
-  const hasRealDelays = tripUpdates.length > 0;
+      // Validate stations exist
+      const originStation = getStationById(origin);
+      const destinationStation = getStationById(destination);
 
-  if (hasRealDelays) {
-    console.log(`Fetched ${tripUpdates.length} trip updates from GTFS-Realtime`);
+      if (!originStation || !destinationStation) {
+        span.setStatus({ code: SpanStatusCode.ERROR, message: 'Invalid station ID' });
+        span.recordException(new Error('Invalid station ID'));
+
+        logger.emit({
+          severityNumber: SeverityNumber.WARN,
+          severityText: 'WARN',
+          body: 'Trains API request with invalid station ID',
+          attributes: { origin, destination },
+        });
+
+        requestCounter.add(1, { status: 'error', error_type: 'invalid_station' });
+
+        return NextResponse.json(
+          { error: 'Invalid station ID' },
+          { status: 400 }
+        );
+      }
+
+      span.setAttributes({
+        'trains.origin_station': originStation.name,
+        'trains.destination_station': destinationStation.name,
+      });
+
+      // Get GTFS scheduled trains (uses local files if no API key)
+      let trains: Train[] = [];
+      let usingMockSchedule = false;
+
+      try {
+        trains = await getScheduledTrains(origin, destination);
+
+        logger.emit({
+          severityNumber: SeverityNumber.INFO,
+          severityText: 'INFO',
+          body: `API route received ${trains.length} trains from GTFS`,
+          attributes: {
+            origin,
+            destination,
+            train_count: trains.length,
+            first_train: trains.length > 0 ? JSON.stringify(trains[0]) : null
+          },
+        });
+
+        span.setAttributes({
+          'trains.gtfs_count': trains.length,
+          'trains.using_gtfs': true,
+        });
+      } catch (error) {
+        span.recordException(error as Error);
+
+        logger.emit({
+          severityNumber: SeverityNumber.ERROR,
+          severityText: 'ERROR',
+          body: 'Error fetching GTFS schedule',
+          attributes: {
+            origin,
+            destination,
+            error: (error as Error).message
+          },
+        });
+      }
+
+      // Only use generateMockTrains as absolute fallback if GTFS fails
+      if (trains.length === 0) {
+        logger.emit({
+          severityNumber: SeverityNumber.WARN,
+          severityText: 'WARN',
+          body: 'GTFS schedule unavailable, using fallback mock data',
+          attributes: { origin, destination },
+        });
+
+        trains = generateMockTrains(origin, destination);
+        usingMockSchedule = true;
+
+        span.setAttributes({
+          'trains.using_mock_schedule': true,
+          'trains.mock_count': trains.length,
+        });
+      } else {
+        logger.emit({
+          severityNumber: SeverityNumber.INFO,
+          severityText: 'INFO',
+          body: `Using ${trains.length} real GTFS trains`,
+          attributes: { origin, destination, train_count: trains.length },
+        });
+
+        span.setAttributes({
+          'trains.using_mock_schedule': false,
+        });
+      }
+
+      // Fetch real-time trip updates and enhance trains with delay information
+      const tripUpdates = await fetchTripUpdates();
+      const hasRealDelays = tripUpdates.length > 0;
+
+      span.setAttributes({
+        'trains.trip_updates_count': tripUpdates.length,
+        'trains.has_real_delays': hasRealDelays,
+      });
+
+      if (hasRealDelays) {
+        logger.emit({
+          severityNumber: SeverityNumber.INFO,
+          severityText: 'INFO',
+          body: `Fetched ${tripUpdates.length} trip updates from GTFS-Realtime`,
+          attributes: { origin, destination, trip_updates_count: tripUpdates.length },
+        });
 
     // Use real delay data from 511.org
     // Match delays by trip_id for train-specific accuracy
@@ -84,10 +190,31 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    console.log(`Delay matching summary: ${matchedCount} matched, ${unmatchedCount} unmatched out of ${trains.length} trains`);
-  } else {
-    // Add mock delay data when no API key
-    console.log('Using mock delay data - configure TRANSIT_API_KEY for real delays');
+        logger.emit({
+          severityNumber: SeverityNumber.INFO,
+          severityText: 'INFO',
+          body: `Delay matching summary: ${matchedCount} matched, ${unmatchedCount} unmatched out of ${trains.length} trains`,
+          attributes: {
+            origin,
+            destination,
+            matched_count: matchedCount,
+            unmatched_count: unmatchedCount,
+            total_trains: trains.length
+          },
+        });
+
+        span.setAttributes({
+          'trains.delay_matched_count': matchedCount,
+          'trains.delay_unmatched_count': unmatchedCount,
+        });
+      } else {
+        // Add mock delay data when no API key
+        logger.emit({
+          severityNumber: SeverityNumber.INFO,
+          severityText: 'INFO',
+          body: 'Using mock delay data - configure TRANSIT_API_KEY for real delays',
+          attributes: { origin, destination },
+        });
     for (let i = 0; i < trains.length; i++) {
       const train = trains[i];
       // Simulate realistic delays: most on-time, some delayed
@@ -107,13 +234,68 @@ export async function GET(request: NextRequest) {
     }
   }
 
-  return NextResponse.json({
-    trains,
-    isMockData: !hasRealDelays, // Flag to indicate mock delay data
-    isMockSchedule: usingMockSchedule // Flag to indicate mock schedule data
-  }, {
-    headers: {
-      'Cache-Control': 'public, s-maxage=30, stale-while-revalidate=60'
+      const duration = Date.now() - startTime;
+
+      span.setAttributes({
+        'trains.response_train_count': trains.length,
+        'trains.is_mock_data': !hasRealDelays,
+        'trains.is_mock_schedule': usingMockSchedule,
+        'http.status_code': 200,
+      });
+
+      span.setStatus({ code: SpanStatusCode.OK });
+
+      logger.emit({
+        severityNumber: SeverityNumber.INFO,
+        severityText: 'INFO',
+        body: 'Trains API request completed successfully',
+        attributes: {
+          origin,
+          destination,
+          train_count: trains.length,
+          duration_ms: duration,
+          is_mock_data: !hasRealDelays,
+          is_mock_schedule: usingMockSchedule
+        },
+      });
+
+      requestCounter.add(1, { status: 'success' });
+      requestDuration.record(duration, { status: 'success' });
+
+      return NextResponse.json({
+        trains,
+        isMockData: !hasRealDelays, // Flag to indicate mock delay data
+        isMockSchedule: usingMockSchedule // Flag to indicate mock schedule data
+      }, {
+        headers: {
+          'Cache-Control': 'public, s-maxage=30, stale-while-revalidate=60'
+        }
+      });
+    } catch (error) {
+      const duration = Date.now() - startTime;
+
+      span.setStatus({ code: SpanStatusCode.ERROR, message: (error as Error).message });
+      span.recordException(error as Error);
+
+      logger.emit({
+        severityNumber: SeverityNumber.ERROR,
+        severityText: 'ERROR',
+        body: 'Trains API request failed',
+        attributes: {
+          error: (error as Error).message,
+          duration_ms: duration
+        },
+      });
+
+      requestCounter.add(1, { status: 'error', error_type: 'internal_error' });
+      requestDuration.record(duration, { status: 'error' });
+
+      return NextResponse.json(
+        { error: 'Internal server error' },
+        { status: 500 }
+      );
+    } finally {
+      span.end();
     }
   });
 }
