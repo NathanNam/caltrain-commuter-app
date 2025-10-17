@@ -2,228 +2,90 @@ import { NextRequest, NextResponse } from 'next/server';
 import { WeatherData } from '@/lib/types';
 import { getStationById } from '@/lib/stations';
 import { celsiusToFahrenheit, mpsToMph } from '@/lib/utils';
-import { trace, SpanStatusCode, Span } from '@opentelemetry/api';
-import { SeverityNumber } from '@opentelemetry/api-logs';
-import { logger, tracer, meter } from '@/otel-server';
-
-// Initialize metrics
-const weatherRequestCounter = meter.createCounter('weather_api_requests_total', {
-  description: 'Total number of requests to the weather API',
-});
-
-const weatherRequestDuration = meter.createHistogram('weather_api_request_duration_ms', {
-  description: 'Duration of weather API requests in milliseconds',
-});
 
 export async function GET(request: NextRequest) {
-  const startTime = Date.now();
+  const searchParams = request.nextUrl.searchParams;
+  const stationId = searchParams.get('station');
 
-  return tracer.startActiveSpan('weather.api.get', async (span: Span) => {
-    const searchParams = request.nextUrl.searchParams;
-    const stationId = searchParams.get('station');
-    let station: any = null;
+  if (!stationId) {
+    return NextResponse.json(
+      { error: 'Station ID is required' },
+      { status: 400 }
+    );
+  }
 
-    try {
+  const station = getStationById(stationId);
+  if (!station) {
+    return NextResponse.json(
+      { error: 'Invalid station ID' },
+      { status: 400 }
+    );
+  }
 
-      span.setAttributes({
-        'http.method': 'GET',
-        'http.route': '/api/weather',
-        'weather.station_id': stationId || '',
-      });
-
-      if (!stationId) {
-        span.setStatus({ code: SpanStatusCode.ERROR, message: 'Missing station ID' });
-        span.recordException(new Error('Station ID is required'));
-
-        logger.emit({
-          severityNumber: SeverityNumber.WARN,
-          severityText: 'WARN',
-          body: 'Weather API request missing station ID',
-        });
-
-        weatherRequestCounter.add(1, { status: 'error', error_type: 'missing_station' });
-
-        return NextResponse.json(
-          { error: 'Station ID is required' },
-          { status: 400 }
-        );
-      }
-
-      station = getStationById(stationId);
-      if (!station) {
-        span.setStatus({ code: SpanStatusCode.ERROR, message: 'Invalid station ID' });
-        span.recordException(new Error('Invalid station ID'));
-
-        logger.emit({
-          severityNumber: SeverityNumber.WARN,
-          severityText: 'WARN',
-          body: 'Weather API request with invalid station ID',
-          attributes: { station_id: stationId },
-        });
-
-        weatherRequestCounter.add(1, { status: 'error', error_type: 'invalid_station' });
-
-        return NextResponse.json(
-          { error: 'Invalid station ID' },
-          { status: 400 }
-        );
-      }
-
-      span.setAttributes({
-        'weather.station_name': station.name,
-        'weather.station_lat': station.coordinates.lat,
-        'weather.station_lng': station.coordinates.lng,
-      });
-
-      // Check if API key is configured
-      const hasApiKey = !!process.env.WEATHER_API_KEY;
-      span.setAttributes({
-        'weather.has_api_key': hasApiKey,
-      });
-
-      if (!hasApiKey) {
-        logger.emit({
-          severityNumber: SeverityNumber.INFO,
-          severityText: 'INFO',
-          body: 'Using mock weather data - configure WEATHER_API_KEY for real weather',
-          attributes: { station_id: stationId, station_name: station.name },
-        });
-
-        const mockWeather = generateMockWeather(station.coordinates.lat);
-        const duration = Date.now() - startTime;
-
-        span.setAttributes({
-          'weather.is_mock_data': true,
-          'weather.temperature': mockWeather.temperature,
-          'http.status_code': 200,
-        });
-
-        span.setStatus({ code: SpanStatusCode.OK });
-
-        weatherRequestCounter.add(1, { status: 'success', data_type: 'mock' });
-        weatherRequestDuration.record(duration, { status: 'success', data_type: 'mock' });
-
-        return NextResponse.json(
-          {
-            ...mockWeather,
-            isMockData: true
-          },
-          {
-            headers: {
-              'Cache-Control': 'public, s-maxage=600, stale-while-revalidate=1200'
-            }
-          }
-        );
-      }
-
-      // Fetch weather from OpenWeatherMap API
-      const apiKey = process.env.WEATHER_API_KEY;
-      const { lat, lng } = station.coordinates;
-
-      const response = await fetch(
-        `https://api.openweathermap.org/data/2.5/weather?lat=${lat}&lon=${lng}&appid=${apiKey}&units=metric`,
-        { next: { revalidate: 600 } } // Cache for 10 minutes
-      );
-
-      if (!response.ok) {
-        throw new Error(`Weather API returned ${response.status}`);
-      }
-
-      const data = await response.json();
-
-      const weatherData: WeatherData = {
-        temperature: celsiusToFahrenheit(data.main.temp),
-        description: data.weather[0].description,
-        icon: data.weather[0].icon,
-        windSpeed: mpsToMph(data.wind.speed),
-        humidity: data.main.humidity
-      };
-
-      const duration = Date.now() - startTime;
-
-      span.setAttributes({
-        'weather.is_mock_data': false,
-        'weather.temperature': weatherData.temperature,
-        'weather.description': weatherData.description,
-        'weather.humidity': weatherData.humidity,
-        'weather.wind_speed': weatherData.windSpeed,
-        'http.status_code': 200,
-      });
-
-      span.setStatus({ code: SpanStatusCode.OK });
-
-      logger.emit({
-        severityNumber: SeverityNumber.INFO,
-        severityText: 'INFO',
-        body: 'Weather API request completed successfully with real data',
-        attributes: {
-          station_id: stationId,
-          station_name: station.name,
-          temperature: weatherData.temperature,
-          description: weatherData.description,
-          duration_ms: duration
-        },
-      });
-
-      weatherRequestCounter.add(1, { status: 'success', data_type: 'real' });
-      weatherRequestDuration.record(duration, { status: 'success', data_type: 'real' });
-
-      return NextResponse.json({
-        ...weatherData,
-        isMockData: false
-      }, {
-        headers: {
-          'Cache-Control': 'public, s-maxage=600, stale-while-revalidate=1200'
-        }
-      });
-
-    } catch (error) {
-      const duration = Date.now() - startTime;
-
-      span.recordException(error as Error);
-
-      logger.emit({
-        severityNumber: SeverityNumber.ERROR,
-        severityText: 'ERROR',
-        body: 'Weather API error, falling back to mock data',
-        attributes: {
-          station_id: stationId,
-          station_name: station?.name,
-          error: (error as Error).message,
-          duration_ms: duration
-        },
-      });
-
-      // Return mock data as fallback
-      const mockWeather = generateMockWeather(station.coordinates.lat);
-
-      span.setAttributes({
-        'weather.is_mock_data': true,
-        'weather.is_fallback': true,
-        'weather.temperature': mockWeather.temperature,
-        'http.status_code': 200,
-      });
-
-      span.setStatus({ code: SpanStatusCode.OK }); // Still successful response, just with fallback data
-
-      weatherRequestCounter.add(1, { status: 'success', data_type: 'fallback' });
-      weatherRequestDuration.record(duration, { status: 'success', data_type: 'fallback' });
-
+  try {
+    // Check if API key is configured
+    if (!process.env.WEATHER_API_KEY) {
+      console.log('Using mock weather data - configure WEATHER_API_KEY for real weather');
       return NextResponse.json(
         {
-          ...mockWeather,
+          ...generateMockWeather(station.coordinates.lat),
           isMockData: true
         },
         {
           headers: {
-            'Cache-Control': 'public, s-maxage=300'
+            'Cache-Control': 'public, s-maxage=600, stale-while-revalidate=1200'
           }
         }
       );
-    } finally {
-      span.end();
     }
-  });
+
+    // Fetch weather from OpenWeatherMap API
+    const apiKey = process.env.WEATHER_API_KEY;
+    const { lat, lng } = station.coordinates;
+
+    const response = await fetch(
+      `https://api.openweathermap.org/data/2.5/weather?lat=${lat}&lon=${lng}&appid=${apiKey}&units=metric`,
+      { next: { revalidate: 600 } } // Cache for 10 minutes
+    );
+
+    if (!response.ok) {
+      throw new Error(`Weather API returned ${response.status}`);
+    }
+
+    const data = await response.json();
+
+    const weatherData: WeatherData = {
+      temperature: celsiusToFahrenheit(data.main.temp),
+      description: data.weather[0].description,
+      icon: data.weather[0].icon,
+      windSpeed: mpsToMph(data.wind.speed),
+      humidity: data.main.humidity
+    };
+
+    return NextResponse.json({
+      ...weatherData,
+      isMockData: false
+    }, {
+      headers: {
+        'Cache-Control': 'public, s-maxage=600, stale-while-revalidate=1200'
+      }
+    });
+
+  } catch (error) {
+    console.error('Weather API error:', error);
+    // Return mock data as fallback
+    return NextResponse.json(
+      {
+        ...generateMockWeather(station.coordinates.lat),
+        isMockData: true
+      },
+      {
+        headers: {
+          'Cache-Control': 'public, s-maxage=300'
+        }
+      }
+    );
+  }
 }
 
 // Generate mock weather data based on latitude (SF is cooler, SJ is warmer)
