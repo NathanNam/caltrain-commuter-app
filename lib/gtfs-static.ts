@@ -3,6 +3,8 @@
 
 import { Train } from './types';
 import { getStationById, stations } from './stations';
+import { TripUpdate, getTripDelay } from './gtfs-realtime';
+import { TrainDelay } from './caltrain-alerts-scraper';
 
 interface GTFSStopTime {
   trip_id: string;
@@ -350,7 +352,9 @@ function findGTFSStopId(stationCode: string, directionId: string): string {
 export async function getScheduledTrains(
   originStationId: string,
   destinationStationId: string,
-  date: Date = new Date()
+  date: Date = new Date(),
+  tripUpdates: TripUpdate[] = [],
+  caltrainAlerts: Map<string, TrainDelay> = new Map()
 ): Promise<Train[]> {
   console.log(`getScheduledTrains called: ${originStationId} -> ${destinationStationId}`);
 
@@ -510,13 +514,33 @@ export async function getScheduledTrains(
     const arrDateTimeStr = `${arrYear}-${arrMonth}-${arrDay}T${arrHourNormalized.toString().padStart(2, '0')}:${arrMin}:${arrSec}${tzOffset}`;
     const arrivalDate = new Date(arrDateTimeStr);
 
-    // Debug: Log first few trains to understand what's happening
-    if (trains.length < 3) {
-      console.log(`Train ${trip.trip_short_name}: Departure ${originStop.departure_time} -> ${departureDate.toLocaleString('en-US', { timeZone: 'America/Los_Angeles' })} (${departureDate.getTime()}) vs current ${new Date(currentTimeMs).toLocaleString('en-US', { timeZone: 'America/Los_Angeles' })} (${currentTimeMs})`);
+    // Check if this train has real-time delay information
+    // If delayed, use actual departure time (scheduled + delay) for filtering
+    // Priority: 1) GTFS-Realtime, 2) Caltrain.com alerts
+    let actualDepartureTimeMs = departureDate.getTime();
+
+    // First, try GTFS-Realtime
+    if (tripUpdates.length > 0) {
+      const delayInfo = getTripDelay(tripUpdates, trip.trip_id);
+
+      if (delayInfo && delayInfo.delay !== 0) {
+        // Apply delay to scheduled departure time
+        actualDepartureTimeMs = departureDate.getTime() + (delayInfo.delay * 60 * 1000);
+      }
     }
 
-    // Only include trains that haven't departed yet
-    if (departureDate.getTime() < currentTimeMs) continue;
+    // If GTFS-Realtime has no delay, check Caltrain alerts as fallback
+    if (actualDepartureTimeMs === departureDate.getTime() && caltrainAlerts.size > 0) {
+      const alertDelay = caltrainAlerts.get(trip.trip_short_name);
+
+      if (alertDelay) {
+        // Apply delay to scheduled departure time
+        actualDepartureTimeMs = departureDate.getTime() + (alertDelay.delayMinutes * 60 * 1000);
+      }
+    }
+
+    // Only include trains that haven't actually departed yet (considering delays)
+    if (actualDepartureTimeMs < currentTimeMs) continue;
 
     const durationMinutes = Math.round((arrivalDate.getTime() - departureDate.getTime()) / 60000);
 

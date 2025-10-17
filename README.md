@@ -450,28 +450,45 @@ For issues and questions, please open an issue on GitHub.
 
 ### Train Delay Tracking
 
-The app integrates with **511.org's GTFS-Realtime API** to provide accurate train delay information:
+The app uses a **dual-source delay detection system** combining 511.org GTFS-Realtime with Caltrain.com alerts for maximum accuracy:
 
+#### Layer 1: GTFS-Realtime (511.org)
 1. **Trip Updates Feed**: Fetches real-time delay data every 30 seconds from 511.org
 2. **Protocol Buffers**: Uses industry-standard GTFS-Realtime format for efficient data transfer
 3. **Train-Specific Matching**: Each train's delay is matched by GTFS trip_id for accuracy
    - Ensures Train 421's delay is shown for Train 421 (not confused with other trains at the same station)
    - Checks maximum delay across all stops in the trip (captures delays that accumulate during the journey)
    - Matches delay information as reported by 511.org's official feed
-4. **Schedule Awareness**: Automatically handles different schedules:
+
+#### Layer 2: Caltrain.com Alert Scraping (NEW!)
+4. **Automated Web Scraping**: Uses Puppeteer to scrape https://www.caltrain.com/alerts in real-time
+   - Parses official Caltrain PADS alerts (Passenger Alert and Display System)
+   - Extracts train-specific delay information from alert text
+   - Handles patterns like "Please Expect Up To 40-45 Minute Delay for Train 165"
+5. **Smart Priority System**:
+   - **Caltrain alerts override GTFS-RT** when GTFS-RT shows 0 delay but alerts indicate a delay
+   - This solves cases where 511.org data is incomplete or stale
+   - GTFS-RT still used for non-zero delays (both sources complement each other)
+6. **Delay-Aware Filtering**:
+   - Trains filter based on **actual departure time** (scheduled + delay), not just scheduled time
+   - Delayed trains appear in schedules even if their scheduled departure has passed
+   - Handles delays of any duration (including delays longer than 1 hour)
+
+#### Display & Features
+7. **Schedule Awareness**: Automatically handles different schedules:
    - **Weekday schedule**: More frequent trains during peak hours (6-9am, 4-7pm)
    - **Weekend schedule**: Reduced service on Saturdays and Sundays
    - **Holiday schedule**: Special service on major US holidays (New Year's, Memorial Day, Independence Day, Labor Day, Thanksgiving, Christmas)
    - Real-time API automatically provides correct schedule based on current date
-5. **Delay Detection**:
+8. **Delay Detection**:
    - Compares scheduled vs. actual times at each stop
    - **Delay threshold**: Shows trains as "delayed" when 1 minute or more late
    - Uses the maximum delay across all stops to capture delays accumulated during the journey
-6. **Visual Indicators**:
+9. **Visual Indicators**:
    - 🟢 Green badge = On time (0 minutes delay)
    - 🟠 Orange badge = Delayed (1+ minutes - shows exact delay)
    - 🔴 Red badge = Cancelled
-7. **Service Alerts**: Displays system-wide disruptions and maintenance notices
+10. **Service Alerts**: Displays system-wide disruptions and maintenance notices
 
 ### Weather Data
 

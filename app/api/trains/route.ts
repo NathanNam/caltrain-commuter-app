@@ -3,6 +3,7 @@ import { Train } from '@/lib/types';
 import { getStationById } from '@/lib/stations';
 import { fetchTripUpdates, getTripDelay } from '@/lib/gtfs-realtime';
 import { getScheduledTrains } from '@/lib/gtfs-static';
+import { parseAlertsFromText, extractTrainDelays, fetchCaltrainAlerts } from '@/lib/caltrain-alerts-scraper';
 
 export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams;
@@ -27,12 +28,53 @@ export async function GET(request: NextRequest) {
     );
   }
 
+  // Fetch real-time trip updates FIRST (before filtering trains by time)
+  // This allows us to filter based on actual departure time (scheduled + delay)
+  const tripUpdates = await fetchTripUpdates();
+  const hasRealDelays = tripUpdates.length > 0;
+
+  if (hasRealDelays) {
+    console.log(`Fetched ${tripUpdates.length} trip updates from GTFS-Realtime`);
+    console.log(`Trip IDs in GTFS-Realtime feed:`, tripUpdates.map(u => u.tripId).join(', '));
+  }
+
+  // Parse Caltrain alerts for train-specific delays
+  // Priority: 1) Query parameter (for testing), 2) Automated scraping from Caltrain.com
+  let caltrainAlerts = new Map();
+
+  // First, check for query parameter override (for testing/debugging)
+  const alertsParam = searchParams.get('alerts');
+  if (alertsParam) {
+    try {
+      const decodedAlerts = decodeURIComponent(alertsParam);
+      const parsedAlerts = parseAlertsFromText(decodedAlerts);
+      caltrainAlerts = extractTrainDelays(parsedAlerts);
+      console.log(`Parsed ${caltrainAlerts.size} train delays from query parameter`);
+    } catch (error) {
+      console.error('Error parsing Caltrain alerts from query parameter:', error);
+    }
+  }
+
+  // If no query parameter, fetch alerts from Caltrain.com automatically
+  if (caltrainAlerts.size === 0) {
+    try {
+      const scrapedAlerts = await fetchCaltrainAlerts();
+      caltrainAlerts = extractTrainDelays(scrapedAlerts);
+      if (caltrainAlerts.size > 0) {
+        console.log(`Auto-scraped ${caltrainAlerts.size} train delays from Caltrain.com`);
+      }
+    } catch (error) {
+      console.error('Error auto-scraping Caltrain alerts:', error);
+    }
+  }
+
   // Get GTFS scheduled trains (uses local files if no API key)
+  // Pass trip updates and Caltrain alerts so filtering can account for delays
   let trains: Train[] = [];
   let usingMockSchedule = false;
 
   try {
-    trains = await getScheduledTrains(origin, destination);
+    trains = await getScheduledTrains(origin, destination, new Date(), tripUpdates, caltrainAlerts);
     console.log(`API route received ${trains.length} trains from GTFS`);
     if (trains.length > 0) {
       console.log('First train:', trains[0]);
@@ -50,13 +92,7 @@ export async function GET(request: NextRequest) {
     console.log(`Using ${trains.length} real GTFS trains`);
   }
 
-  // Fetch real-time trip updates and enhance trains with delay information
-  const tripUpdates = await fetchTripUpdates();
-  const hasRealDelays = tripUpdates.length > 0;
-
   if (hasRealDelays) {
-    console.log(`Fetched ${tripUpdates.length} trip updates from GTFS-Realtime`);
-
     // Use real delay data from 511.org
     // Match delays by trip_id for train-specific accuracy
     let matchedCount = 0;
@@ -64,18 +100,26 @@ export async function GET(request: NextRequest) {
 
     for (const train of trains) {
       if (train.tripId) {
+        // Priority: Caltrain alerts override GTFS-RT when GTFS-RT shows 0 delay
+        // This handles cases where Caltrain.com has more accurate delay info
         const delayInfo = getTripDelay(tripUpdates, train.tripId);
-        if (delayInfo) {
+        const alertDelay = caltrainAlerts.get(train.trainNumber);
+
+        if (alertDelay && alertDelay.delayMinutes > 0) {
+          // Caltrain alert has delay info - use it (overrides GTFS-RT)
+          train.delay = alertDelay.delayMinutes;
+          train.status = 'delayed';
+          matchedCount++;
+        } else if (delayInfo && delayInfo.delay !== 0) {
+          // GTFS-RT has non-zero delay info - use it
           train.delay = delayInfo.delay;
           train.status = delayInfo.status;
           matchedCount++;
-          console.log(`Train ${train.trainNumber} (trip_id: ${train.tripId}): ${delayInfo.status}, delay: ${delayInfo.delay} min`);
         } else {
-          // No delay info found for this trip - assume on-time
+          // No delay from either source - assume on-time
           train.status = 'on-time';
           train.delay = 0;
           unmatchedCount++;
-          console.log(`Train ${train.trainNumber} (trip_id: ${train.tripId}): NO MATCH in GTFS-Realtime data - assuming on-time`);
         }
       } else {
         // Fallback for trains without trip_id (mock data)
