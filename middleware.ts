@@ -1,23 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { logger, meter } from '@/otel-server';
-import { SeverityNumber } from '@opentelemetry/api-logs';
 
-// Metrics for monitoring middleware
-const securityBlockCounter = meter.createCounter('security_blocks_total', {
-  description: 'Total number of security blocks by middleware',
-});
+// Simple logging for middleware (Edge Runtime compatible)
+function logSecurityEvent(level: 'INFO' | 'WARN' | 'ERROR', message: string, data?: any) {
+  const timestamp = new Date().toISOString();
+  const logEntry = {
+    timestamp,
+    level,
+    message,
+    data,
+    source: 'middleware'
+  };
 
-const assetNotFoundCounter = meter.createCounter('asset_not_found_total', {
-  description: 'Total number of missing asset requests',
-});
-
-const legacyEndpointCounter = meter.createCounter('legacy_endpoint_probes_total', {
-  description: 'Total number of legacy endpoint probe attempts',
-});
-
-const rateLimitCounter = meter.createCounter('rate_limit_violations_total', {
-  description: 'Total number of rate limit violations',
-});
+  // In production, you would send this to your logging service
+  console.log(JSON.stringify(logEntry));
+}
 
 // Rate limiting store (in production, use Redis or similar)
 const rateLimitStore = new Map<string, { count: number; resetTime: number }>();
@@ -92,21 +88,11 @@ export function middleware(request: NextRequest) {
   // Apply rate limiting
   const rateLimitResult = checkRateLimit(clientIP, pathname);
   if (rateLimitResult.blocked) {
-    rateLimitCounter.add(1, { 
+    logSecurityEvent('WARN', 'Rate limit exceeded', {
+      path: pathname,
+      ip: clientIP.substring(0, 8) + '...',
+      user_agent: userAgent.substring(0, 100),
       reason: rateLimitResult.reason,
-      ip: clientIP.substring(0, 8) + '...' // Partial IP for privacy
-    });
-
-    logger.emit({
-      severityNumber: SeverityNumber.WARN,
-      severityText: 'WARN',
-      body: 'Rate limit exceeded',
-      attributes: {
-        path: pathname,
-        ip: clientIP.substring(0, 8) + '...',
-        user_agent: userAgent.substring(0, 100),
-        reason: rateLimitResult.reason,
-      },
     });
 
     return new NextResponse('Too Many Requests', { 
@@ -122,21 +108,10 @@ export function middleware(request: NextRequest) {
 
   // Block access to sensitive files
   if (isBlockedPath(pathname)) {
-    securityBlockCounter.add(1, { 
-      type: 'sensitive_file',
+    logSecurityEvent('WARN', 'Blocked access to sensitive file', {
       path: pathname,
-      ip: clientIP.substring(0, 8) + '...'
-    });
-
-    logger.emit({
-      severityNumber: SeverityNumber.WARN,
-      severityText: 'WARN',
-      body: 'Blocked access to sensitive file',
-      attributes: {
-        path: pathname,
-        ip: clientIP.substring(0, 8) + '...',
-        user_agent: userAgent.substring(0, 100),
-      },
+      ip: clientIP.substring(0, 8) + '...',
+      user_agent: userAgent.substring(0, 100),
     });
 
     return new NextResponse('Forbidden', { status: 403 });
@@ -144,20 +119,10 @@ export function middleware(request: NextRequest) {
 
   // Handle legacy endpoint probes
   if (isLegacyEndpoint(pathname)) {
-    legacyEndpointCounter.add(1, { 
-      endpoint: pathname,
-      ip: clientIP.substring(0, 8) + '...'
-    });
-
-    logger.emit({
-      severityNumber: SeverityNumber.INFO,
-      severityText: 'INFO',
-      body: 'Legacy endpoint probe detected',
-      attributes: {
-        path: pathname,
-        ip: clientIP.substring(0, 8) + '...',
-        user_agent: userAgent.substring(0, 100),
-      },
+    logSecurityEvent('INFO', 'Legacy endpoint probe detected', {
+      path: pathname,
+      ip: clientIP.substring(0, 8) + '...',
+      user_agent: userAgent.substring(0, 100),
     });
 
     return new NextResponse('Not Found', { status: 404 });
@@ -165,21 +130,10 @@ export function middleware(request: NextRequest) {
 
   // Detect suspicious patterns
   if (isSuspiciousRequest(pathname, userAgent)) {
-    securityBlockCounter.add(1, { 
-      type: 'suspicious_pattern',
+    logSecurityEvent('WARN', 'Suspicious request pattern detected', {
       path: pathname,
-      ip: clientIP.substring(0, 8) + '...'
-    });
-
-    logger.emit({
-      severityNumber: SeverityNumber.WARN,
-      severityText: 'WARN',
-      body: 'Suspicious request pattern detected',
-      attributes: {
-        path: pathname,
-        ip: clientIP.substring(0, 8) + '...',
-        user_agent: userAgent.substring(0, 100),
-      },
+      ip: clientIP.substring(0, 8) + '...',
+      user_agent: userAgent.substring(0, 100),
     });
 
     return new NextResponse('Forbidden', { status: 403 });
@@ -187,20 +141,10 @@ export function middleware(request: NextRequest) {
 
   // Handle missing static assets gracefully
   if (isMissingStaticAsset(pathname)) {
-    assetNotFoundCounter.add(1, { 
+    logSecurityEvent('INFO', 'Missing static asset requested', {
+      path: pathname,
       asset_type: getAssetType(pathname),
-      path: pathname
-    });
-
-    logger.emit({
-      severityNumber: SeverityNumber.INFO,
-      severityText: 'INFO',
-      body: 'Missing static asset requested',
-      attributes: {
-        path: pathname,
-        asset_type: getAssetType(pathname),
-        ip: clientIP.substring(0, 8) + '...',
-      },
+      ip: clientIP.substring(0, 8) + '...',
     });
 
     // Return appropriate fallback for different asset types

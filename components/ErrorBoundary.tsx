@@ -1,13 +1,25 @@
 'use client';
 
 import React, { Component, ErrorInfo, ReactNode } from 'react';
-import { logger, meter } from '@/otel-server';
-import { SeverityNumber } from '@opentelemetry/api-logs';
 
-// Metrics for error boundary
-const errorBoundaryCounter = meter.createCounter('error_boundary_catches_total', {
-  description: 'Total number of errors caught by error boundaries',
-});
+// Simple client-side logging (no OpenTelemetry on client)
+function logClientError(error: Error, errorInfo: ErrorInfo, retryCount: number) {
+  const errorData = {
+    timestamp: new Date().toISOString(),
+    message: error.message,
+    stack: error.stack?.substring(0, 1000),
+    componentStack: errorInfo.componentStack?.substring(0, 1000),
+    retryCount,
+    userAgent: navigator.userAgent,
+    url: window.location.href,
+  };
+
+  // Log to console for development
+  console.error('Error Boundary caught error:', errorData);
+
+  // In production, you would send this to your error reporting service
+  // Example: fetch('/api/errors', { method: 'POST', body: JSON.stringify(errorData) });
+}
 
 interface Props {
   children: ReactNode;
@@ -70,25 +82,7 @@ class ErrorBoundary extends Component<Props, State> {
   }
 
   private logError(error: Error, errorInfo: ErrorInfo) {
-    const errorType = this.getErrorType(error);
-    
-    errorBoundaryCounter.add(1, { 
-      error_type: errorType,
-      component_stack: errorInfo.componentStack ? 'present' : 'missing'
-    });
-
-    logger.emit({
-      severityNumber: SeverityNumber.ERROR,
-      severityText: 'ERROR',
-      body: 'Error boundary caught an error',
-      attributes: {
-        error_message: error.message,
-        error_stack: error.stack?.substring(0, 1000), // Limit stack trace length
-        error_type: errorType,
-        component_stack: errorInfo.componentStack?.substring(0, 1000),
-        retry_count: this.state.retryCount,
-      },
-    });
+    logClientError(error, errorInfo, this.state.retryCount);
   }
 
   private getErrorType(error: Error): string {
