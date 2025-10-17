@@ -1,5 +1,6 @@
 // GTFS-Realtime utilities for fetching Caltrain real-time data from 511.org
 import GtfsRealtimeBindings from 'gtfs-realtime-bindings';
+import { resilientFetch, DEFAULT_RETRY_CONFIG } from './api-resilience';
 
 const CALTRAIN_AGENCY = 'CT';
 const API_BASE = 'http://api.511.org/transit';
@@ -56,15 +57,23 @@ export async function fetchTripUpdates(): Promise<TripUpdate[]> {
 
   try {
     const url = `${API_BASE}/tripupdates?api_key=${apiKey}&agency=${CALTRAIN_AGENCY}`;
-    const response = await fetch(url, {
-      next: { revalidate: 30 }, // Cache for 30 seconds
+    const cacheKey = `trip_updates_${Date.now() - (Date.now() % 30000)}`; // 30-second cache buckets
+
+    const buffer = await resilientFetch(url, {
+      method: 'GET',
+      cacheKey,
+      cacheConfig: {
+        ttlMs: 30000, // 30 seconds
+        staleWhileRevalidateMs: 60000, // 1 minute
+      },
+      retryConfig: {
+        ...DEFAULT_RETRY_CONFIG,
+        maxRetries: 2,
+        retryableStatusCodes: [429, 502, 503, 504, 408],
+      },
+      context: 'gtfs_trip_updates',
+      parser: (response) => response.arrayBuffer(),
     });
-
-    if (!response.ok) {
-      throw new Error(`511.org API error: ${response.status}`);
-    }
-
-    const buffer = await response.arrayBuffer();
     const feed = GtfsRealtimeBindings.transit_realtime.FeedMessage.decode(
       new Uint8Array(buffer)
     );
@@ -129,15 +138,23 @@ export async function fetchServiceAlerts(): Promise<Alert[]> {
 
   try {
     const url = `${API_BASE}/servicealerts?api_key=${apiKey}&agency=${CALTRAIN_AGENCY}&format=json`;
-    const response = await fetch(url, {
-      next: { revalidate: 300 }, // Cache for 5 minutes
+    const cacheKey = `service_alerts_${Math.floor(Date.now() / 300000)}`; // 5-minute cache buckets
+
+    const data = await resilientFetch(url, {
+      method: 'GET',
+      cacheKey,
+      cacheConfig: {
+        ttlMs: 300000, // 5 minutes
+        staleWhileRevalidateMs: 600000, // 10 minutes
+      },
+      retryConfig: {
+        ...DEFAULT_RETRY_CONFIG,
+        maxRetries: 2,
+        retryableStatusCodes: [429, 502, 503, 504, 408],
+      },
+      context: 'gtfs_service_alerts',
+      parser: (response) => response.json(),
     });
-
-    if (!response.ok) {
-      throw new Error(`511.org API error: ${response.status}`);
-    }
-
-    const data = await response.json();
     const alerts: Alert[] = [];
 
     // Parse JSON format service alerts

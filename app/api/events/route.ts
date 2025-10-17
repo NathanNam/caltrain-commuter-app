@@ -6,6 +6,7 @@ import { getChaseCenterEventsForDate } from '@/lib/chase-center-events';
 import { trace, SpanStatusCode, Span } from '@opentelemetry/api';
 import { SeverityNumber } from '@opentelemetry/api-logs';
 import { logger, tracer, meter } from '@/otel-server';
+import { resilientFetch, DEFAULT_RETRY_CONFIG } from '@/lib/api-resilience';
 
 // This API fetches events from multiple venues near Caltrain stations
 // Supports: Oracle Park, Chase Center, Bill Graham, The Fillmore, and more
@@ -314,12 +315,41 @@ async function fetchTicketmasterEvents(date: string): Promise<VenueEvent[]> {
   const venueIds = Object.values(ticketmasterVenueIds);
 
   try {
-    // Fetch events for all venues (you can parallelize this for better performance)
+    // Fetch events for all venues with resilient fetch
+    const cacheKey = `ticketmaster_events_${date}_${Math.floor(Date.now() / 1800000)}`; // 30-minute cache buckets
+
     const promises = venueIds.map(venueId =>
-      fetch(
+      resilientFetch(
         `https://app.ticketmaster.com/discovery/v2/events.json?apikey=${apiKey}&venueId=${venueId}&startDateTime=${date}T00:00:00Z&endDateTime=${date}T23:59:59Z&size=20`,
-        { next: { revalidate: 1800 } }
-      ).then(res => res.ok ? res.json() : null)
+        {
+          method: 'GET',
+          cacheKey: `${cacheKey}_${venueId}`,
+          cacheConfig: {
+            ttlMs: 1800000, // 30 minutes
+            staleWhileRevalidateMs: 3600000, // 1 hour
+          },
+          retryConfig: {
+            ...DEFAULT_RETRY_CONFIG,
+            maxRetries: 2, // Fewer retries for events
+            retryableStatusCodes: [429, 502, 503, 504, 408],
+          },
+          circuitBreakerConfig: {
+            failureThreshold: 3,
+            resetTimeoutMs: 600000, // 10 minutes
+            monitoringPeriodMs: 1800000, // 30 minutes
+          },
+          context: 'ticketmaster',
+          parser: (response) => response.json(),
+        }
+      ).catch(error => {
+        logger.emit({
+          severityNumber: SeverityNumber.WARN,
+          severityText: 'WARN',
+          body: `Failed to fetch events for venue ${venueId}`,
+          attributes: { venue_id: venueId, error: error.message },
+        });
+        return null;
+      })
     );
 
     const results = await Promise.all(promises);

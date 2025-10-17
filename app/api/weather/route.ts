@@ -5,6 +5,7 @@ import { celsiusToFahrenheit, mpsToMph } from '@/lib/utils';
 import { trace, SpanStatusCode, Span } from '@opentelemetry/api';
 import { SeverityNumber } from '@opentelemetry/api-logs';
 import { logger, tracer, meter } from '@/otel-server';
+import { resilientFetch, DEFAULT_RETRY_CONFIG } from '@/lib/api-resilience';
 
 // Initialize metrics
 const weatherRequestCounter = meter.createCounter('weather_api_requests_total', {
@@ -116,20 +117,35 @@ export async function GET(request: NextRequest) {
         );
       }
 
-      // Fetch weather from OpenWeatherMap API
+      // Fetch weather from OpenWeatherMap API with resilience
       const apiKey = process.env.WEATHER_API_KEY;
       const { lat, lng } = station.coordinates;
 
-      const response = await fetch(
+      const cacheKey = `weather_${stationId}_${Math.floor(Date.now() / 600000)}`; // 10-minute cache buckets
+
+      const data = await resilientFetch(
         `https://api.openweathermap.org/data/2.5/weather?lat=${lat}&lon=${lng}&appid=${apiKey}&units=metric`,
-        { next: { revalidate: 600 } } // Cache for 10 minutes
+        {
+          method: 'GET',
+          cacheKey,
+          cacheConfig: {
+            ttlMs: 600000, // 10 minutes
+            staleWhileRevalidateMs: 1200000, // 20 minutes
+          },
+          retryConfig: {
+            ...DEFAULT_RETRY_CONFIG,
+            maxRetries: 3,
+            retryableStatusCodes: [429, 502, 503, 504, 408, 500], // Include 500 for weather API
+          },
+          circuitBreakerConfig: {
+            failureThreshold: 3,
+            resetTimeoutMs: 300000, // 5 minutes
+            monitoringPeriodMs: 600000, // 10 minutes
+          },
+          context: 'openweathermap',
+          parser: (response) => response.json(),
+        }
       );
-
-      if (!response.ok) {
-        throw new Error(`Weather API returned ${response.status}`);
-      }
-
-      const data = await response.json();
 
       const weatherData: WeatherData = {
         temperature: celsiusToFahrenheit(data.main.temp),

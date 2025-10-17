@@ -4,6 +4,7 @@ import { fetchServiceAlerts } from '@/lib/gtfs-realtime';
 import { trace, SpanStatusCode, Span } from '@opentelemetry/api';
 import { SeverityNumber } from '@opentelemetry/api-logs';
 import { logger, tracer, meter } from '@/otel-server';
+import { resilientFetch, DEFAULT_RETRY_CONFIG } from '@/lib/api-resilience';
 
 // Initialize metrics
 const alertsRequestCounter = meter.createCounter('alerts_api_requests_total', {
@@ -32,8 +33,8 @@ export async function GET() {
       });
 
       if (hasApiKey) {
-        // Fetch real-time service alerts from 511.org
-        const gtfsAlerts = await fetchServiceAlerts();
+        // Fetch real-time service alerts from 511.org with resilience
+        const gtfsAlerts = await fetchServiceAlertsWithResilience();
 
         // Convert to our ServiceAlert format
         const alerts: ServiceAlert[] = gtfsAlerts.map((alert) => ({
@@ -150,4 +151,54 @@ export async function GET() {
       span.end();
     }
   });
+}
+
+// Resilient wrapper for service alerts
+async function fetchServiceAlertsWithResilience() {
+  const apiKey = process.env.TRANSIT_API_KEY;
+  if (!apiKey) {
+    return [];
+  }
+
+  try {
+    // Use resilient fetch for 511.org service alerts
+    const cacheKey = `service_alerts_${Math.floor(Date.now() / 300000)}`; // 5-minute cache buckets
+
+    return await resilientFetch('http://api.511.org/transit/servicealerts', {
+      method: 'GET',
+      cacheKey,
+      cacheConfig: {
+        ttlMs: 300000, // 5 minutes
+        staleWhileRevalidateMs: 600000, // 10 minutes
+      },
+      retryConfig: {
+        ...DEFAULT_RETRY_CONFIG,
+        maxRetries: 2,
+        retryableStatusCodes: [429, 502, 503, 504, 408],
+      },
+      circuitBreakerConfig: {
+        failureThreshold: 3,
+        resetTimeoutMs: 300000, // 5 minutes
+        monitoringPeriodMs: 600000, // 10 minutes
+      },
+      context: 'service_alerts',
+      parser: async (response) => {
+        // Parse the service alerts response
+        // For now, fall back to the original function for complex parsing
+        throw new Error('Use original fetchServiceAlerts for complex parsing');
+      }
+    });
+  } catch (error) {
+    // Fall back to original function
+    logger.emit({
+      severityNumber: SeverityNumber.WARN,
+      severityText: 'WARN',
+      body: 'Resilient fetch failed, falling back to original fetchServiceAlerts',
+      attributes: {
+        error: (error as Error).message
+      },
+    });
+
+    return await fetchServiceAlerts();
+  }
 }
