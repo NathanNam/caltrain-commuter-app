@@ -26,7 +26,10 @@ The live demo is fully functional with real-time features enabled!
 
 This app provides comprehensive real-time information for Caltrain commuters across 25 main Caltrain stations from San Francisco to San Jose Diridon. Key capabilities include:
 
-- 🚆 **Real-time train delays** via 511.org GTFS-Realtime API
+- 🚆 **Real-time train delays** with triple-redundant delay tracking:
+  - Primary: 511.org GTFS-Realtime API
+  - Backup: @CaltrainAlerts Twitter/X automated delay tweets
+  - Fallback: Caltrain.com alerts scraping
 - 🌤️ **Live weather** for origin and destination stations
 - 🎫 **Event crowding alerts** for 9+ SF venues (Oracle Park, Chase Center, Moscone, etc.)
 - 📍 **25 main Caltrain stations** with GPS coordinates (excluding South County Connector stations)
@@ -44,22 +47,26 @@ This app provides comprehensive real-time information for Caltrain commuters acr
   - Weekday peak hours: More frequent trains (every 20 mins)
   - Weekends: Reduced frequency (every 45 mins)
   - Holidays: Special holiday schedule (every 60 mins)
-- **Real-Time Delay Tracking**: See live train delays and on-time status 🚦
+- **Real-Time Delay Tracking**: Triple-redundant delay detection for maximum reliability 🚦
+  - **Primary Source**: 511.org GTFS-Realtime API (most accurate, trip-specific delays)
+  - **Backup Source**: @CaltrainAlerts Twitter/X (24/7 automated delay tweets when trains >10 min late)
+  - **Fallback Source**: Caltrain.com alerts web scraping
   - Visual indicators for on-time, delayed, early, or cancelled trains
   - Delay duration displayed in minutes
   - Color-coded status badges (green = on-time, orange = delayed, red = cancelled)
+  - Automatic failover when 511.org is unavailable
 - **Weather Information**: See current weather for both origin and destination stations
-- **Event Crowding Alerts**: See upcoming events at major SF Bay Area venues that may cause crowding 🏟️
-  - **Automatically updated** - Moscone events fetched at runtime every 24 hours
-  - Oracle Park (SF Giants) - affects SF, 22nd, Bayshore stations
-  - Chase Center (Warriors, Concerts) - affects SF, 22nd stations
-  - Moscone Center (Tech conferences, conventions - automatically fetched!)
+- **Event Crowding Alerts**: See upcoming games and events at major SF Bay Area venues that may cause crowding 🏟️
+  - **🆕 Automated Sports Schedules** - Free, no API keys required!
+    - 🏀 **Warriors** (NBA) + **Valkyries** (WNBA) at Chase Center → affects SF, 22nd stations
+    - ⚾ **Giants** (MLB) at Oracle Park → affects SF, 22nd, Bayshore stations
+    - 🏈 **49ers** (NFL) at Levi's Stadium → affects Mountain View, Sunnyvale, Santa Clara stations
+    - 🏒 **Sharks** (NHL) at SAP Center → affects Diridon station (directly across the street!)
+  - **🎤 Moscone Center** (Tech conferences) - automatically fetched every 24 hours
     - Dreamforce, Microsoft Ignite, TechCrunch Disrupt, PyTorch Conference, and more
-  - SAP Center (San Jose Sharks, Concerts) - affects Diridon station
-  - Levi's Stadium (SF 49ers, Major Concerts) - affects Santa Clara station
-  - Bill Graham Civic Auditorium
-  - The Fillmore, The Masonic, Warfield Theatre
-  - And more concert venues near 4th & King
+  - **🎵 Concerts & Events** via Ticketmaster API (optional)
+    - Bill Graham Civic Auditorium, The Fillmore, The Masonic, Warfield Theatre
+    - And more concert venues near 4th & King
 - **Saved Routes**: Save up to 5 frequently used routes for quick access
 - **Service Alerts**: Real-time service disruptions and notices from 511.org
 - **Auto-Refresh**: Data updates automatically (trains every 30s, weather every 10 min, events every 30 min, alerts every 5 min)
@@ -71,13 +78,23 @@ This app provides comprehensive real-time information for Caltrain commuters acr
 - **Language**: TypeScript
 - **Styling**: Tailwind CSS v4
 - **APIs**:
-  - 511.org Transit API (GTFS-Realtime for train delays & alerts)
+  - **Delay Data (triple-redundant)**:
+    - 511.org Transit API (GTFS-Realtime - primary source)
+    - Twitter/X (@CaltrainAlerts - automated delay tweets, backup source)
+    - Caltrain.com (web scraping - fallback source)
   - OpenWeatherMap API (weather data)
-  - Ticketmaster Discovery API (event crowding alerts)
+  - **Sports APIs (all free, no keys required)**:
+    - ESPN NBA API (Warriors games)
+    - ESPN WNBA API (Valkyries games)
+    - MLB Stats API (Giants games)
+    - ESPN NFL API (49ers games)
+    - NHL Web API (Sharks games)
   - SF Travel Convention Calendar (Moscone events - automatically scraped at runtime)
+  - Ticketmaster Discovery API (optional - for additional concert/event data)
 - **Data Format**: GTFS-Realtime Protocol Buffers
 - **Storage**: localStorage for saved routes
 - **Event Fetching**: Runtime web scraping with 24-hour caching
+- **Delay Scraping**: Puppeteer headless browser for Twitter and Caltrain.com alerts
 
 ## Getting Started
 
@@ -499,18 +516,70 @@ The app uses a **dual-source delay detection system** combining 511.org GTFS-Rea
 
 ### Event Crowding Alerts
 
-- Queries **Ticketmaster Discovery API** for events at 11+ SF Bay Area venues
-- Fetches events for the current day in parallel for all venues
-- **Geographic filtering**: Only includes SF Bay Area venues (filters out LA, etc.)
-- Intelligent crowd level detection based on:
+The app now features a **multi-source event detection system** that automatically fetches games and events from official sports APIs and venue sources:
+
+#### Automated Sports Schedule Integration (NEW!)
+
+**No API keys required** - all sports APIs are free and work out of the box:
+
+1. **🏀 NBA (Golden State Warriors)**
+   - Source: ESPN NBA API
+   - Venue: Chase Center, San Francisco
+   - Affected Stations: 4th & King, 22nd Street
+   - Auto-detects: Regular season, preseason, playoff games
+
+2. **🏀 WNBA (Golden State Valkyries)**
+   - Source: ESPN WNBA API
+   - Venue: Chase Center, San Francisco
+   - Affected Stations: 4th & King, 22nd Street
+   - Auto-detects: Regular season, preseason, playoff games
+
+3. **⚾ MLB (SF Giants)**
+   - Source: MLB Stats API (official)
+   - Venue: Oracle Park, San Francisco
+   - Affected Stations: 4th & King, 22nd Street, Bayshore
+   - Auto-detects: Regular season, spring training, playoff games
+
+4. **🏈 NFL (SF 49ers)**
+   - Source: ESPN NFL API
+   - Venue: Levi's Stadium, Santa Clara
+   - Affected Stations: Mountain View, Sunnyvale, Santa Clara
+   - Note: Fans typically take Caltrain to Mountain View + VTA light rail
+   - Auto-detects: Regular season, preseason, playoff games
+
+5. **🏒 NHL (San Jose Sharks)**
+   - Source: NHL Web API (official)
+   - Venue: SAP Center, San Jose
+   - Affected Stations: San Jose Diridon (directly across the street!)
+   - Auto-detects: Regular season, preseason, playoff games
+
+#### Additional Event Sources
+
+6. **🎤 Moscone Center Events** (Tech Conferences)
+   - Source: SF Travel Convention Calendar (auto-scraped every 24h)
+   - Major events: Dreamforce, Microsoft Ignite, TechCrunch Disrupt, PyTorch Conference
+   - Affected Stations: 4th & King, 22nd Street
+
+7. **🎫 Ticketmaster Events** (Concerts & Other Events)
+   - Source: Ticketmaster Discovery API (requires API key)
+   - 11+ SF Bay Area venues including Bill Graham, The Fillmore, The Masonic, Warfield
+   - Geographic filtering ensures only SF Bay Area events
+
+#### Smart Features
+
+- **Pacific Time Zone Handling**: All games are correctly matched to their Pacific Time date
+  - Date parameters are parsed as Pacific Time (not UTC midnight)
+  - Game times are compared using Pacific Time dates
+  - A 7pm PDT game shows up on the correct day, not shifted by UTC conversion
+  - Ensures Warriors/Giants/49ers/Sharks/Valkyries games appear on the day fans expect
+- **Intelligent crowd level detection** based on:
   - Venue capacity (Oracle Park, Chase Center, Levi's Stadium, SAP Center = high)
-  - Event type (sports games, major concerts)
-  - Ticket prices (expensive = high crowd)
-  - Special conventions (Dreamforce, WWDC at Moscone)
+  - Event type (sports games, major concerts, tech conferences)
+  - Ticket prices and popularity
 - **Smart station mapping**: Shows which Caltrain stations are affected by each event
-  - SF venues → 4th & King, 22nd Street
-  - South Bay venues → Diridon (SAP Center), Santa Clara (Levi's Stadium)
-- Updates every 30 minutes
+- **Automatic deduplication**: Combines data from multiple sources without showing duplicate events
+- **Priority system**: Official sports APIs > Moscone events > Ticketmaster > Manual lists
+- Updates every 30 minutes with 30-minute cache
 
 ### Train Schedule Architecture
 

@@ -3,47 +3,99 @@ import { VenueEvent } from '@/lib/types';
 import { ticketmasterVenueIds } from '@/lib/venues';
 import { getMosconeEventsForDate as getMosconeEventsRuntime } from '@/lib/moscone-events-fetcher';
 import { getChaseCenterEventsForDate } from '@/lib/chase-center-events';
+import { getWarriorsGamesForDate } from '@/lib/nba-schedule';
+import { getValkyriesGamesForDate } from '@/lib/wnba-schedule';
+import { getGiantsGamesForDate } from '@/lib/mlb-schedule';
+import { get49ersGamesForDate } from '@/lib/nfl-schedule';
+import { getSharksGamesForDate } from '@/lib/nhl-schedule';
 
 // This API fetches events from multiple venues near Caltrain stations
-// Supports: Oracle Park, Chase Center, Bill Graham, The Fillmore, and more
+// Supports: Oracle Park, Chase Center, Bill Graham, The Fillmore, SAP Center, Levi's Stadium, and more
 //
-// Moscone events are automatically fetched at runtime from SF Travel (cached for 24h)
-// Chase Center events are manually maintained in chase-center-events.ts
+// Event Sources (in priority order):
+// 1. Official Sports APIs (NBA, WNBA, MLB, NFL, NHL) - free, no key required
+// 2. Moscone events (SF Travel API) - automatically fetched at runtime (cached for 24h)
+// 3. Ticketmaster API - requires API key
+// 4. Manual lists (chase-center-events.ts) - fallback for missing data
 
 export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams;
-  const date = searchParams.get('date') || new Date().toISOString().split('T')[0];
-  const dateObj = new Date(date);
 
-  // Fetch Moscone events at runtime (automatically fetched from SF Travel, cached for 24h)
-  const mosconeEvents = await getMosconeEventsRuntime(dateObj);
+  // Get date parameter or use current Pacific Time date
+  let dateStr = searchParams.get('date');
+  if (!dateStr) {
+    // Get current date in Pacific Time
+    const now = new Date();
+    const pacificDateStr = now.toLocaleString('en-US', {
+      timeZone: 'America/Los_Angeles',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit'
+    }).split(',')[0]; // MM/DD/YYYY
+    const [month, day, year] = pacificDateStr.split('/');
+    dateStr = `${year}-${month}-${day}`; // YYYY-MM-DD
+  }
 
-  // Get Chase Center events from manually maintained list
-  const chaseCenterEvents = getChaseCenterEventsForDate(dateObj);
+  // Parse date as Pacific Time (not UTC) by appending Pacific timezone offset
+  // This ensures "2025-10-18" means Oct 18 PDT, not Oct 17 at 5pm PDT
+  const dateObj = new Date(dateStr + 'T12:00:00-07:00'); // Noon Pacific Time
+
+  // Fetch all events in parallel from all sources
+  const [
+    warriorsGames,
+    valkyriesGames,
+    giantsGames,
+    fortyNinersGames,
+    sharksGames,
+    mosconeEvents,
+    chaseCenterEvents
+  ] = await Promise.all([
+    getWarriorsGamesForDate(dateObj),
+    getValkyriesGamesForDate(dateObj),
+    getGiantsGamesForDate(dateObj),
+    get49ersGamesForDate(dateObj),
+    getSharksGamesForDate(dateObj),
+    getMosconeEventsRuntime(dateObj),
+    Promise.resolve(getChaseCenterEventsForDate(dateObj))
+  ]);
+
+  // Combine all events from sports APIs first (highest priority)
+  const allEvents: VenueEvent[] = [
+    ...warriorsGames,
+    ...valkyriesGames,
+    ...giantsGames,
+    ...fortyNinersGames,
+    ...sharksGames,
+    ...mosconeEvents
+  ];
 
   // Check if Ticketmaster API key is configured
   if (process.env.TICKETMASTER_API_KEY) {
     try {
-      const ticketmasterEvents = await fetchTicketmasterEvents(date);
+      const ticketmasterEvents = await fetchTicketmasterEvents(dateStr);
 
-      // Combine Ticketmaster events with manually maintained events
+      // Add Ticketmaster events if not already covered by sports APIs
       // Remove duplicates by checking event names and venues
-      const allEvents = [...ticketmasterEvents];
-
-      // Add Moscone events if not already in Ticketmaster results
-      for (const mosconeEvent of mosconeEvents) {
-        const isDuplicate = ticketmasterEvents.some(
-          e => e.venueName.toLowerCase().includes('moscone') &&
-               e.eventName === mosconeEvent.eventName
+      for (const tmEvent of ticketmasterEvents) {
+        const isDuplicate = allEvents.some(
+          e => {
+            const sameVenue = e.venueName.toLowerCase() === tmEvent.venueName.toLowerCase() ||
+                            (e.venueName.toLowerCase().includes('chase') && tmEvent.venueName.toLowerCase().includes('chase')) ||
+                            (e.venueName.toLowerCase().includes('oracle') && tmEvent.venueName.toLowerCase().includes('oracle')) ||
+                            (e.venueName.toLowerCase().includes('moscone') && tmEvent.venueName.toLowerCase().includes('moscone'));
+            const sameEvent = e.eventName.toLowerCase().includes(tmEvent.eventName.toLowerCase()) ||
+                            tmEvent.eventName.toLowerCase().includes(e.eventName.toLowerCase());
+            return sameVenue && sameEvent;
+          }
         );
         if (!isDuplicate) {
-          allEvents.push(mosconeEvent);
+          allEvents.push(tmEvent);
         }
       }
 
-      // Add Chase Center events if not already in Ticketmaster results
+      // Add Chase Center manual events if not already present
       for (const chaseCenterEvent of chaseCenterEvents) {
-        const isDuplicate = ticketmasterEvents.some(
+        const isDuplicate = allEvents.some(
           e => e.venueName.toLowerCase().includes('chase') &&
                e.eventName === chaseCenterEvent.eventName
         );
@@ -62,31 +114,16 @@ export async function GET(request: NextRequest) {
       });
     } catch (error) {
       console.error('Ticketmaster API error:', error);
-      // Fall back to mock data + Moscone events if API fails
+      // Continue to return sports API events even if Ticketmaster fails
     }
   }
 
-  // If no API key or API fails, return mock data + manually maintained events
-  console.log('Using mock event data - configure TICKETMASTER_API_KEY for real events');
-  const mockEvents = generateMockEvents(date);
-
-  // Combine mock events with manually maintained events (avoid duplicates)
-  const allEvents = [...mockEvents];
-
-  // Add Moscone events
-  for (const mosconeEvent of mosconeEvents) {
-    const isDuplicate = mockEvents.some(
-      e => e.venueName === 'Moscone Center' && e.eventName === mosconeEvent.eventName
-    );
-    if (!isDuplicate) {
-      allEvents.push(mosconeEvent);
-    }
-  }
-
-  // Add Chase Center events
+  // Return sports API events + Moscone events (no Ticketmaster)
+  // Add manual Chase Center events as fallback
   for (const chaseCenterEvent of chaseCenterEvents) {
-    const isDuplicate = mockEvents.some(
-      e => e.venueName === 'Chase Center' && e.eventName === chaseCenterEvent.eventName
+    const isDuplicate = allEvents.some(
+      e => e.venueName.toLowerCase().includes('chase') &&
+           e.eventName === chaseCenterEvent.eventName
     );
     if (!isDuplicate) {
       allEvents.push(chaseCenterEvent);
@@ -95,7 +132,7 @@ export async function GET(request: NextRequest) {
 
   return NextResponse.json({
     events: allEvents,
-    isMockData: true
+    isMockData: false
   }, {
     headers: {
       'Cache-Control': 'public, s-maxage=1800, stale-while-revalidate=3600' // Cache for 30 min
