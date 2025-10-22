@@ -122,7 +122,7 @@ export async function getSharksGamesForDate(date: Date): Promise<ApiResponse<Ven
 /**
  * Get all Sharks games in a date range
  */
-export async function getSharksGamesInRange(startDate: Date, endDate: Date): Promise<VenueEvent[]> {
+export async function getSharksGamesInRange(startDate: Date, endDate: Date): Promise<ApiResponse<VenueEvent>> {
   try {
     // Determine which season(s) to fetch
     const startYear = startDate.getFullYear();
@@ -135,21 +135,21 @@ export async function getSharksGamesInRange(startDate: Date, endDate: Date): Pro
       season = `${startYear - 1}${startYear}`;
     }
 
-    const response = await fetch(
+    const response = await fetchWithRetry(
       `https://api-web.nhle.com/v1/club-schedule-season/${SAN_JOSE_SHARKS_TEAM_CODE}/${season}`,
       { next: { revalidate: 1800 } }
     );
 
-    if (!response.ok) {
-      return [];
-    }
-
-    const data = await response.json();
+    const rawData = await response.json();
+    const data = validateApiResponse(rawData, NHLResponseSchema, 'NHL API');
     const events: VenueEvent[] = [];
 
     if (data.games && Array.isArray(data.games)) {
       for (const game of data.games) {
+        if (!game.startTimeUTC) continue;
+
         const gameDate = new Date(game.startTimeUTC);
+        if (isNaN(gameDate.getTime())) continue; // Skip invalid dates
 
         // Only include games in the date range
         if (gameDate < startDate || gameDate > endDate) continue;
@@ -186,9 +186,8 @@ export async function getSharksGamesInRange(startDate: Date, endDate: Date): Pro
       }
     }
 
-    return events;
+    return createSuccessResponse(events, `Found ${events.length} Sharks games in date range`);
   } catch (error) {
-    console.error('Error fetching Sharks schedule range:', error);
-    return [];
+    return handleApiError(error, 'getSharksGamesInRange');
   }
 }

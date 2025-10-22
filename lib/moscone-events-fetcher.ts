@@ -205,11 +205,10 @@ export async function fetchMosconeEvents(): Promise<MosconeEvent[]> {
 
   try {
     console.log('Fetching fresh Moscone events from SF Travel...');
-    const response = await fetch(SF_TRAVEL_URL);
 
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-    }
+    // Use fetchWithRetry for better error handling
+    const { fetchWithRetry } = await import('./error-handling');
+    const response = await fetchWithRetry(SF_TRAVEL_URL, {}, { timeout: 30000, retries: 2 });
 
     const html = await response.text();
     const events = parseEventsFromHTML(html);

@@ -111,33 +111,33 @@ export async function getValkyriesGamesForDate(date: Date): Promise<ApiResponse<
 /**
  * Get all Valkyries games in a date range
  */
-export async function getValkyriesGamesInRange(startDate: Date, endDate: Date): Promise<VenueEvent[]> {
+export async function getValkyriesGamesInRange(startDate: Date, endDate: Date): Promise<ApiResponse<VenueEvent>> {
   try {
-    const response = await fetch(
+    const response = await fetchWithRetry(
       'https://site.api.espn.com/apis/site/v2/sports/basketball/wnba/teams/gsv/schedule',
       { next: { revalidate: 1800 } }
     );
 
-    if (!response.ok) {
-      return [];
-    }
-
-    const data = await response.json();
+    const rawData = await response.json();
+    const data = validateApiResponse(rawData, ESPNWNBAResponseSchema, 'ESPN WNBA API');
     const events: VenueEvent[] = [];
 
     if (data.events && Array.isArray(data.events)) {
       for (const event of data.events) {
+        if (!event.date) continue;
+
         const gameDate = new Date(event.date);
+        if (isNaN(gameDate.getTime())) continue; // Skip invalid dates
 
         // Only include games in the date range
         if (gameDate < startDate || gameDate > endDate) continue;
 
         // Determine if this is a home game
         const competition = event.competitions?.[0];
-        if (!competition) continue;
+        if (!competition?.competitors) continue;
 
-        const homeTeam = competition.competitors?.find((c: any) => c.homeAway === 'home');
-        const awayTeam = competition.competitors?.find((c: any) => c.homeAway === 'away');
+        const homeTeam = competition.competitors.find((c: any) => c?.homeAway === 'home');
+        const awayTeam = competition.competitors.find((c: any) => c?.homeAway === 'away');
 
         const isValkyriesHome = homeTeam?.team?.abbreviation === 'GSV';
 
@@ -166,9 +166,8 @@ export async function getValkyriesGamesInRange(startDate: Date, endDate: Date): 
       }
     }
 
-    return events;
+    return createSuccessResponse(events, `Found ${events.length} Valkyries games in date range`);
   } catch (error) {
-    console.error('Error fetching Valkyries schedule range:', error);
-    return [];
+    return handleApiError(error, 'getValkyriesGamesInRange');
   }
 }

@@ -106,21 +106,18 @@ export async function getGiantsGamesForDate(date: Date): Promise<ApiResponse<Ven
 /**
  * Get all Giants games in a date range
  */
-export async function getGiantsGamesInRange(startDate: Date, endDate: Date): Promise<VenueEvent[]> {
+export async function getGiantsGamesInRange(startDate: Date, endDate: Date): Promise<ApiResponse<VenueEvent>> {
   try {
     const startDateStr = startDate.toISOString().split('T')[0];
     const endDateStr = endDate.toISOString().split('T')[0];
 
-    const response = await fetch(
+    const response = await fetchWithRetry(
       `https://statsapi.mlb.com/api/v1/schedule?sportId=1&teamId=${SF_GIANTS_TEAM_ID}&startDate=${startDateStr}&endDate=${endDateStr}`,
       { next: { revalidate: 1800 } }
     );
 
-    if (!response.ok) {
-      return [];
-    }
-
-    const data = await response.json();
+    const rawData = await response.json();
+    const data = validateApiResponse(rawData, MLBResponseSchema, 'MLB Stats API');
     const events: VenueEvent[] = [];
 
     if (data.dates && Array.isArray(data.dates)) {
@@ -131,14 +128,14 @@ export async function getGiantsGamesInRange(startDate: Date, endDate: Date): Pro
           const homeTeam = game.teams?.home;
           const awayTeam = game.teams?.away;
 
-          if (!homeTeam || !awayTeam) continue;
+          if (!homeTeam?.team || !awayTeam?.team) continue;
 
-          const isGiantsHome = homeTeam.team?.id === SF_GIANTS_TEAM_ID;
+          const isGiantsHome = homeTeam.team.id === SF_GIANTS_TEAM_ID;
 
           // Only include HOME games
           if (!isGiantsHome) continue;
 
-          const opponentName = awayTeam.team?.name || 'TBD';
+          const opponentName = awayTeam.team.name || 'TBD';
 
           let gameType = '';
           if (game.gameType === 'S') {
@@ -150,6 +147,7 @@ export async function getGiantsGamesInRange(startDate: Date, endDate: Date): Pro
           }
 
           const gameDate = new Date(game.gameDate);
+          if (isNaN(gameDate.getTime())) continue; // Skip invalid dates
 
           events.push({
             id: `mlb-giants-${game.gamePk}`,
@@ -165,9 +163,8 @@ export async function getGiantsGamesInRange(startDate: Date, endDate: Date): Pro
       }
     }
 
-    return events;
+    return createSuccessResponse(events, `Found ${events.length} Giants games in date range`);
   } catch (error) {
-    console.error('Error fetching Giants schedule range:', error);
-    return [];
+    return handleApiError(error, 'getGiantsGamesInRange');
   }
 }
