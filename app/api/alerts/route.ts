@@ -9,10 +9,24 @@ export async function GET() {
 
     if (hasApiKey) {
       // Fetch real-time service alerts from 511.org
-      const gtfsAlerts = await fetchServiceAlerts();
+      const gtfsAlertsResponse = await fetchServiceAlerts();
+
+      if (gtfsAlertsResponse.error) {
+        // Return error response
+        return NextResponse.json({
+          alerts: [],
+          isMockData: false,
+          error: gtfsAlertsResponse.message
+        }, {
+          status: 500,
+          headers: {
+            'Cache-Control': 'public, s-maxage=60'
+          }
+        });
+      }
 
       // Convert to our ServiceAlert format
-      const alerts: ServiceAlert[] = gtfsAlerts.map((alert) => ({
+      const alerts: ServiceAlert[] = gtfsAlertsResponse.data.map((alert) => ({
         id: alert.id,
         severity: alert.severity,
         title: alert.headerText,
