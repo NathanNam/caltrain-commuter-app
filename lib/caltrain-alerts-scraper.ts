@@ -1,6 +1,15 @@
 // Caltrain.com Alerts Scraper
 // Scrapes train-specific delay information from Caltrain.com/alerts
 
+import {
+  fetchWithRetry,
+  handleApiError,
+  createSuccessResponse,
+  ApiResponse,
+  AppError,
+  ErrorType
+} from './error-handling';
+
 export interface CaltrainAlert {
   trainNumber?: string;
   delayMinutes?: number;
@@ -23,14 +32,23 @@ export interface TrainDelay {
  * - "Train 123 is delayed by 15 minutes"
  */
 function parseAlertForTrainDelay(alertText: string): TrainDelay | null {
+  if (!alertText || typeof alertText !== 'string') {
+    return null;
+  }
+
   // Pattern 1: "Please Expect Up To X-Y Minute Delay for Train NNN"
   const delayPattern1 = /(?:expect|up to)\s+(?:up to\s+)?(\d+)(?:-(\d+))?\s*minute\s*delay\s+for\s+train\s+(\d+)/i;
   const match1 = alertText.match(delayPattern1);
 
   if (match1) {
-    const minDelay = parseInt(match1[1]);
-    const maxDelay = match1[2] ? parseInt(match1[2]) : minDelay;
+    const minDelay = parseInt(match1[1], 10);
+    const maxDelay = match1[2] ? parseInt(match1[2], 10) : minDelay;
     const trainNumber = match1[3];
+
+    // Add NaN checks for parseInt results
+    if (isNaN(minDelay) || (match1[2] && isNaN(maxDelay))) {
+      return null;
+    }
 
     // Use the maximum delay value for conservative estimates
     return {
@@ -45,9 +63,14 @@ function parseAlertForTrainDelay(alertText: string): TrainDelay | null {
   const match2 = alertText.match(delayPattern2);
 
   if (match2) {
+    const delayMinutes = parseInt(match2[2], 10);
+    if (isNaN(delayMinutes)) {
+      return null;
+    }
+
     return {
       trainNumber: match2[1],
-      delayMinutes: parseInt(match2[2]),
+      delayMinutes,
       source: 'caltrain-alerts'
     };
   }
@@ -57,9 +80,14 @@ function parseAlertForTrainDelay(alertText: string): TrainDelay | null {
   const match3 = alertText.match(delayPattern3);
 
   if (match3) {
+    const delayMinutes = parseInt(match3[2], 10);
+    if (isNaN(delayMinutes)) {
+      return null;
+    }
+
     return {
       trainNumber: match3[1],
-      delayMinutes: parseInt(match3[2]),
+      delayMinutes,
       source: 'caltrain-alerts'
     };
   }
@@ -85,6 +113,10 @@ function categorizeAlert(alertText: string): CaltrainAlert['type'] {
  * Determine severity based on alert type and content
  */
 function determineSeverity(alertText: string, type: CaltrainAlert['type']): CaltrainAlert['severity'] {
+  if (!alertText || typeof alertText !== 'string') {
+    return 'info';
+  }
+
   const lowerText = alertText.toLowerCase();
 
   if (type === 'cancellation') return 'critical';
@@ -92,7 +124,14 @@ function determineSeverity(alertText: string, type: CaltrainAlert['type']): Calt
     // Check if delay is significant (30+ minutes)
     const delayMatch = alertText.match(/(\d+)(?:-(\d+))?\s*minute/i);
     if (delayMatch) {
-      const maxDelay = delayMatch[2] ? parseInt(delayMatch[2]) : parseInt(delayMatch[1]);
+      const minDelay = parseInt(delayMatch[1], 10);
+      const maxDelay = delayMatch[2] ? parseInt(delayMatch[2], 10) : minDelay;
+
+      // Add NaN checks
+      if (isNaN(minDelay) || (delayMatch[2] && isNaN(maxDelay))) {
+        return 'warning'; // Default to warning for unparseable delays
+      }
+
       if (maxDelay >= 30) return 'critical';
       if (maxDelay >= 10) return 'warning';
     }
@@ -133,14 +172,16 @@ function parseAlert(alertText: string): CaltrainAlert {
  * The alerts are loaded dynamically via JavaScript, so we use a headless browser
  * to execute the page's JavaScript and extract the alert text.
  */
-export async function fetchCaltrainAlerts(): Promise<CaltrainAlert[]> {
+export async function fetchCaltrainAlerts(): Promise<ApiResponse<CaltrainAlert>> {
+  let browser: any = null;
+
   try {
     // Dynamic import to avoid issues with Edge runtime
     const puppeteer = await import('puppeteer');
 
     console.log('Launching Puppeteer to scrape Caltrain alerts...');
 
-    const browser = await puppeteer.default.launch({
+    browser = await puppeteer.default.launch({
       headless: true,
       args: ['--no-sandbox', '--disable-setuid-sandbox']
     });
@@ -194,12 +235,13 @@ export async function fetchCaltrainAlerts(): Promise<CaltrainAlert[]> {
     });
 
     await browser.close();
+    browser = null; // Mark as closed
 
     console.log(`Scraped ${alertTexts.length} raw alert texts from Caltrain.com`);
 
     if (alertTexts.length === 0) {
       console.warn('No alerts found on Caltrain.com/alerts page');
-      return [];
+      return createSuccessResponse([], 'No alerts found on Caltrain.com');
     }
 
     // Combine all alert texts and parse them
@@ -208,10 +250,18 @@ export async function fetchCaltrainAlerts(): Promise<CaltrainAlert[]> {
 
     console.log(`Parsed ${parsedAlerts.length} structured alerts`);
 
-    return parsedAlerts;
+    return createSuccessResponse(parsedAlerts, `Scraped and parsed ${parsedAlerts.length} alerts from Caltrain.com`);
   } catch (error) {
-    console.error('Error scraping Caltrain alerts:', error);
-    return [];
+    // Ensure browser is closed in case of error
+    if (browser) {
+      try {
+        await browser.close();
+      } catch (closeError) {
+        console.error('Error closing browser:', closeError);
+      }
+    }
+
+    return handleApiError(error, 'fetchCaltrainAlerts');
   }
 }
 

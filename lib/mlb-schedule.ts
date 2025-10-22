@@ -4,14 +4,30 @@
 // Documentation: https://github.com/toddrob99/MLB-StatsAPI
 
 import { VenueEvent } from './types';
+import {
+  fetchWithRetry,
+  handleApiError,
+  createSuccessResponse,
+  ApiResponse,
+  validateApiResponse,
+  MLBGameSchema
+} from './error-handling';
+import { z } from 'zod';
 
 const SF_GIANTS_TEAM_ID = 137;
+
+// Schema for MLB API response
+const MLBResponseSchema = z.object({
+  dates: z.array(z.object({
+    games: z.array(MLBGameSchema).optional()
+  })).optional()
+});
 
 /**
  * Fetch Giants games for a specific date
  * Uses MLB's free Stats API - no API key required
  */
-export async function getGiantsGamesForDate(date: Date): Promise<VenueEvent[]> {
+export async function getGiantsGamesForDate(date: Date): Promise<ApiResponse<VenueEvent>> {
   try {
     // Convert to Pacific Time date for querying (games are scheduled in Pacific Time)
     const pacificDateStr = date.toLocaleString('en-US', {
@@ -23,17 +39,13 @@ export async function getGiantsGamesForDate(date: Date): Promise<VenueEvent[]> {
     const [month, day, year] = pacificDateStr.split('/');
     const dateStr = `${year}-${month}-${day}`; // YYYY-MM-DD
 
-    const response = await fetch(
+    const response = await fetchWithRetry(
       `https://statsapi.mlb.com/api/v1/schedule?sportId=1&teamId=${SF_GIANTS_TEAM_ID}&startDate=${dateStr}&endDate=${dateStr}`,
       { next: { revalidate: 1800 } } // Cache for 30 minutes
     );
 
-    if (!response.ok) {
-      console.error('MLB Stats API error:', response.status);
-      return [];
-    }
-
-    const data = await response.json();
+    const rawData = await response.json();
+    const data = validateApiResponse(rawData, MLBResponseSchema, 'MLB Stats API');
     const events: VenueEvent[] = [];
 
     // Parse games from the dates array
@@ -46,15 +58,15 @@ export async function getGiantsGamesForDate(date: Date): Promise<VenueEvent[]> {
           const homeTeam = game.teams?.home;
           const awayTeam = game.teams?.away;
 
-          if (!homeTeam || !awayTeam) continue;
+          if (!homeTeam?.team || !awayTeam?.team) continue;
 
-          const isGiantsHome = homeTeam.team?.id === SF_GIANTS_TEAM_ID;
+          const isGiantsHome = homeTeam.team.id === SF_GIANTS_TEAM_ID;
 
           // Only include HOME games at Oracle Park
           if (!isGiantsHome) continue;
 
           // Get opponent name
-          const opponentName = awayTeam.team?.name || 'TBD';
+          const opponentName = awayTeam.team.name || 'TBD';
 
           // Determine game type
           let gameType = '';
@@ -68,6 +80,7 @@ export async function getGiantsGamesForDate(date: Date): Promise<VenueEvent[]> {
 
           // Get game time
           const gameDate = new Date(game.gameDate);
+          if (isNaN(gameDate.getTime())) continue; // Skip invalid dates
 
           // Create event
           events.push({
@@ -84,10 +97,9 @@ export async function getGiantsGamesForDate(date: Date): Promise<VenueEvent[]> {
       }
     }
 
-    return events;
+    return createSuccessResponse(events, `Found ${events.length} Giants games for ${date.toDateString()}`);
   } catch (error) {
-    console.error('Error fetching Giants schedule:', error);
-    return [];
+    return handleApiError(error, 'getGiantsGamesForDate');
   }
 }
 

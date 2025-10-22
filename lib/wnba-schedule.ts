@@ -3,24 +3,34 @@
 // Source: https://site.api.espn.com/apis/site/v2/sports/basketball/wnba/teams/gsv/schedule
 
 import { VenueEvent } from './types';
+import {
+  fetchWithRetry,
+  handleApiError,
+  createSuccessResponse,
+  ApiResponse,
+  validateApiResponse,
+  ESPNEventSchema
+} from './error-handling';
+import { z } from 'zod';
+
+// Schema for ESPN WNBA API response
+const ESPNWNBAResponseSchema = z.object({
+  events: z.array(ESPNEventSchema).optional()
+});
 
 /**
  * Fetch Valkyries games for a specific date
  * Uses ESPN's free WNBA API - no API key required
  */
-export async function getValkyriesGamesForDate(date: Date): Promise<VenueEvent[]> {
+export async function getValkyriesGamesForDate(date: Date): Promise<ApiResponse<VenueEvent>> {
   try {
-    const response = await fetch(
+    const response = await fetchWithRetry(
       'https://site.api.espn.com/apis/site/v2/sports/basketball/wnba/teams/gsv/schedule',
       { next: { revalidate: 1800 } } // Cache for 30 minutes
     );
 
-    if (!response.ok) {
-      console.error('ESPN WNBA API error:', response.status);
-      return [];
-    }
-
-    const data = await response.json();
+    const rawData = await response.json();
+    const data = validateApiResponse(rawData, ESPNWNBAResponseSchema, 'ESPN WNBA API');
     const events: VenueEvent[] = [];
 
     // Get the target date string (YYYY-MM-DD) in Pacific Time
@@ -36,7 +46,10 @@ export async function getValkyriesGamesForDate(date: Date): Promise<VenueEvent[]
     // Parse games from the events array
     if (data.events && Array.isArray(data.events)) {
       for (const event of data.events) {
+        if (!event.date) continue;
+
         const gameDate = new Date(event.date);
+        if (isNaN(gameDate.getTime())) continue; // Skip invalid dates
 
         // Convert game time to Pacific Time date
         const gameDatePacific = gameDate.toLocaleString('en-US', {
@@ -53,11 +66,11 @@ export async function getValkyriesGamesForDate(date: Date): Promise<VenueEvent[]
 
         // Determine if this is a home game (Valkyries are at Chase Center)
         const competition = event.competitions?.[0];
-        if (!competition) continue;
+        if (!competition?.competitors) continue;
 
         // Check if Valkyries are the home team
-        const homeTeam = competition.competitors?.find((c: any) => c.homeAway === 'home');
-        const awayTeam = competition.competitors?.find((c: any) => c.homeAway === 'away');
+        const homeTeam = competition.competitors.find((c: any) => c?.homeAway === 'home');
+        const awayTeam = competition.competitors.find((c: any) => c?.homeAway === 'away');
 
         const isValkyriesHome = homeTeam?.team?.abbreviation === 'GSV';
 
@@ -89,10 +102,9 @@ export async function getValkyriesGamesForDate(date: Date): Promise<VenueEvent[]
       }
     }
 
-    return events;
+    return createSuccessResponse(events, `Found ${events.length} Valkyries games for ${date.toDateString()}`);
   } catch (error) {
-    console.error('Error fetching Valkyries schedule:', error);
-    return [];
+    return handleApiError(error, 'getValkyriesGamesForDate');
   }
 }
 
