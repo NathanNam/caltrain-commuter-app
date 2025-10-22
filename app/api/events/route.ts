@@ -42,11 +42,11 @@ export async function GET(request: NextRequest) {
 
   // Fetch all events in parallel from all sources
   const [
-    warriorsGames,
-    valkyriesGames,
-    giantsGames,
-    fortyNinersGames,
-    sharksGames,
+    warriorsGamesResponse,
+    valkyriesGamesResponse,
+    giantsGamesResponse,
+    fortyNinersGamesResponse,
+    sharksGamesResponse,
     mosconeEvents,
     chaseCenterEvents
   ] = await Promise.all([
@@ -59,13 +59,13 @@ export async function GET(request: NextRequest) {
     Promise.resolve(getChaseCenterEventsForDate(dateObj))
   ]);
 
-  // Combine all events from sports APIs first (highest priority)
+  // Extract data from API responses, handling errors gracefully
   const allEvents: VenueEvent[] = [
-    ...warriorsGames,
-    ...valkyriesGames,
-    ...giantsGames,
-    ...fortyNinersGames,
-    ...sharksGames,
+    ...(warriorsGamesResponse.error ? [] : warriorsGamesResponse.data),
+    ...(valkyriesGamesResponse.error ? [] : valkyriesGamesResponse.data),
+    ...(giantsGamesResponse.error ? [] : giantsGamesResponse.data),
+    ...(fortyNinersGamesResponse.error ? [] : fortyNinersGamesResponse.data),
+    ...(sharksGamesResponse.error ? [] : sharksGamesResponse.data),
     ...mosconeEvents
   ];
 

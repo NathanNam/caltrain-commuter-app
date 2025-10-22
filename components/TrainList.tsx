@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { Train } from '@/lib/types';
+import { ErrorBoundary, useErrorHandler, SimpleErrorFallback } from './ErrorBoundary';
 import { formatTime, formatDuration } from '@/lib/utils';
 
 interface TrainListProps {
@@ -9,13 +10,14 @@ interface TrainListProps {
   destinationId: string;
 }
 
-export default function TrainList({ originId, destinationId }: TrainListProps) {
+function TrainListContent({ originId, destinationId }: TrainListProps) {
   const [trains, setTrains] = useState<Train[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [isMockData, setIsMockData] = useState(false);
   const [isMockSchedule, setIsMockSchedule] = useState(false);
+  const handleError = useErrorHandler();
 
   useEffect(() => {
     if (!originId || !destinationId) {
@@ -33,17 +35,29 @@ export default function TrainList({ originId, destinationId }: TrainListProps) {
         );
 
         if (!response.ok) {
-          throw new Error('Failed to fetch train data');
+          throw new Error(`Failed to fetch train data: ${response.status} ${response.statusText}`);
         }
 
         const data = await response.json();
-        setTrains(data.trains || []);
-        setIsMockData(data.isMockData || false);
-        setIsMockSchedule(data.isMockSchedule || false);
+
+        // Validate response structure
+        if (!data || typeof data !== 'object') {
+          throw new Error('Invalid response format from trains API');
+        }
+
+        setTrains(Array.isArray(data.trains) ? data.trains : []);
+        setIsMockData(Boolean(data.isMockData));
+        setIsMockSchedule(Boolean(data.isMockSchedule));
         setLastUpdated(new Date());
       } catch (err) {
-        setError(err instanceof Error ? err.message : 'An error occurred');
+        const errorMessage = err instanceof Error ? err.message : 'An error occurred while fetching trains';
+        setError(errorMessage);
         setTrains([]);
+
+        // Report async errors to error boundary
+        if (err instanceof Error) {
+          handleError(err);
+        }
       } finally {
         setLoading(false);
       }
@@ -55,7 +69,7 @@ export default function TrainList({ originId, destinationId }: TrainListProps) {
     const interval = setInterval(fetchTrains, 60000);
 
     return () => clearInterval(interval);
-  }, [originId, destinationId]);
+  }, [originId, destinationId, handleError]);
 
   if (!originId || !destinationId) {
     return null;
@@ -227,5 +241,21 @@ export default function TrainList({ originId, destinationId }: TrainListProps) {
         ))}
       </div>
     </div>
+  );
+}
+
+// Export the component wrapped with ErrorBoundary
+export default function TrainList(props: TrainListProps) {
+  return (
+    <ErrorBoundary
+      fallback={
+        <SimpleErrorFallback
+          message="Unable to load train information"
+          resetError={() => window.location.reload()}
+        />
+      }
+    >
+      <TrainListContent {...props} />
+    </ErrorBoundary>
   );
 }

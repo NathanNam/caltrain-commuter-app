@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { SavedRoute } from '@/lib/types';
 import { getStationById } from '@/lib/stations';
+import { ErrorBoundary, useErrorHandler, SimpleErrorFallback } from './ErrorBoundary';
 
 interface SavedRoutesProps {
   currentOriginId: string;
@@ -13,7 +14,7 @@ interface SavedRoutesProps {
 const STORAGE_KEY = 'caltrain_saved_routes';
 const MAX_ROUTES = 5;
 
-export default function SavedRoutes({
+function SavedRoutesContent({
   currentOriginId,
   currentDestinationId,
   onRouteSelect
@@ -22,23 +23,74 @@ export default function SavedRoutes({
   const [showSaveForm, setShowSaveForm] = useState(false);
   const [routeName, setRouteName] = useState('');
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [storageError, setStorageError] = useState<string | null>(null);
+  const handleError = useErrorHandler();
 
-  // Load saved routes from localStorage
+  // Load saved routes from localStorage with error handling
   useEffect(() => {
-    const saved = localStorage.getItem(STORAGE_KEY);
-    if (saved) {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY);
+      if (saved) {
+        const parsedRoutes = JSON.parse(saved);
+
+        // Validate the parsed data structure
+        if (!Array.isArray(parsedRoutes)) {
+          throw new Error('Saved routes data is not an array');
+        }
+
+        // Validate each route object
+        const validRoutes = parsedRoutes.filter((route: any) => {
+          return (
+            route &&
+            typeof route === 'object' &&
+            typeof route.id === 'string' &&
+            typeof route.name === 'string' &&
+            typeof route.originId === 'string' &&
+            typeof route.destinationId === 'string'
+          );
+        });
+
+        // If some routes were invalid, save the cleaned data
+        if (validRoutes.length !== parsedRoutes.length) {
+          console.warn(`Removed ${parsedRoutes.length - validRoutes.length} invalid saved routes`);
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(validRoutes));
+        }
+
+        setRoutes(validRoutes);
+      }
+    } catch (e) {
+      console.error('Failed to parse saved routes:', e);
+      setStorageError('Saved routes data was corrupted and has been cleared.');
+
+      // Clear corrupted data
       try {
-        setRoutes(JSON.parse(saved));
-      } catch (e) {
-        console.error('Failed to parse saved routes:', e);
+        localStorage.removeItem(STORAGE_KEY);
+      } catch (clearError) {
+        console.error('Failed to clear corrupted localStorage:', clearError);
+      }
+
+      // Report error for monitoring
+      if (e instanceof Error) {
+        handleError(new Error(`SavedRoutes localStorage corruption: ${e.message}`));
       }
     }
-  }, []);
+  }, [handleError]);
 
-  // Save routes to localStorage
+  // Save routes to localStorage with error handling
   const saveRoutes = (newRoutes: SavedRoute[]) => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(newRoutes));
-    setRoutes(newRoutes);
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(newRoutes));
+      setRoutes(newRoutes);
+      setStorageError(null); // Clear any previous storage errors
+    } catch (e) {
+      console.error('Failed to save routes to localStorage:', e);
+      setStorageError('Failed to save routes. Your browser storage may be full.');
+
+      // Report error for monitoring
+      if (e instanceof Error) {
+        handleError(new Error(`SavedRoutes localStorage save error: ${e.message}`));
+      }
+    }
   };
 
   const handleSaveRoute = () => {
@@ -91,6 +143,24 @@ export default function SavedRoutes({
 
   return (
     <div className="bg-white rounded-lg shadow-md p-6">
+      {/* Storage Error Display */}
+      {storageError && (
+        <div className="mb-4 bg-red-50 border border-red-200 rounded-lg p-4">
+          <div className="flex items-center">
+            <svg className="h-5 w-5 text-red-400 mr-2" viewBox="0 0 20 20" fill="currentColor">
+              <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+            </svg>
+            <span className="text-red-800 text-sm">{storageError}</span>
+          </div>
+          <button
+            onClick={() => setStorageError(null)}
+            className="mt-2 text-red-600 hover:text-red-800 text-sm underline"
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
+
       <div className="flex justify-between items-center mb-4">
         <h2 className="text-xl font-bold text-gray-800">Saved Routes</h2>
         {canSaveCurrentRoute && !showSaveForm && routes.length < MAX_ROUTES && (
@@ -204,5 +274,21 @@ export default function SavedRoutes({
         </p>
       )}
     </div>
+  );
+}
+
+// Export the component wrapped with ErrorBoundary
+export default function SavedRoutes(props: SavedRoutesProps) {
+  return (
+    <ErrorBoundary
+      fallback={
+        <SimpleErrorFallback
+          message="Unable to load saved routes"
+          resetError={() => window.location.reload()}
+        />
+      }
+    >
+      <SavedRoutesContent {...props} />
+    </ErrorBoundary>
   );
 }

@@ -3,6 +3,15 @@
 // Source: https://site.api.espn.com/apis/site/v2/sports/basketball/nba/teams/gsw/schedule
 
 import { VenueEvent } from './types';
+import {
+  fetchWithRetry,
+  handleApiError,
+  createSuccessResponse,
+  ApiResponse,
+  validateApiResponse,
+  ESPNEventSchema
+} from './error-handling';
+import { z } from 'zod';
 
 export interface NBAGame {
   id: string;
@@ -13,23 +22,24 @@ export interface NBAGame {
   venue: string;
 }
 
+// Schema for ESPN NBA API response
+const ESPNNBAResponseSchema = z.object({
+  events: z.array(ESPNEventSchema).optional()
+});
+
 /**
  * Fetch Warriors games for a specific date
  * Uses ESPN's free NBA API - no API key required
  */
-export async function getWarriorsGamesForDate(date: Date): Promise<VenueEvent[]> {
+export async function getWarriorsGamesForDate(date: Date): Promise<ApiResponse<VenueEvent>> {
   try {
-    const response = await fetch(
+    const response = await fetchWithRetry(
       'https://site.api.espn.com/apis/site/v2/sports/basketball/nba/teams/gsw/schedule',
       { next: { revalidate: 1800 } } // Cache for 30 minutes
     );
 
-    if (!response.ok) {
-      console.error('ESPN NBA API error:', response.status);
-      return [];
-    }
-
-    const data = await response.json();
+    const rawData = await response.json();
+    const data = validateApiResponse(rawData, ESPNNBAResponseSchema, 'ESPN NBA API');
     const events: VenueEvent[] = [];
 
     // Get the target date string (YYYY-MM-DD) in Pacific Time
@@ -46,7 +56,10 @@ export async function getWarriorsGamesForDate(date: Date): Promise<VenueEvent[]>
     // Parse games from the events array
     if (data.events && Array.isArray(data.events)) {
       for (const event of data.events) {
+        if (!event.date) continue;
+
         const gameDate = new Date(event.date);
+        if (isNaN(gameDate.getTime())) continue; // Skip invalid dates
 
         // Convert game time to Pacific Time date
         const gameDatePacific = gameDate.toLocaleString('en-US', {
@@ -63,11 +76,11 @@ export async function getWarriorsGamesForDate(date: Date): Promise<VenueEvent[]>
 
         // Determine if this is a home game (Warriors are at Chase Center)
         const competition = event.competitions?.[0];
-        if (!competition) continue;
+        if (!competition?.competitors) continue;
 
         // Check if Warriors are the home team
-        const homeTeam = competition.competitors?.find((c: any) => c.homeAway === 'home');
-        const awayTeam = competition.competitors?.find((c: any) => c.homeAway === 'away');
+        const homeTeam = competition.competitors.find((c: any) => c?.homeAway === 'home');
+        const awayTeam = competition.competitors.find((c: any) => c?.homeAway === 'away');
 
         const isWarriorsHome = homeTeam?.team?.abbreviation === 'GS' || homeTeam?.team?.abbreviation === 'GSW';
 
@@ -99,44 +112,43 @@ export async function getWarriorsGamesForDate(date: Date): Promise<VenueEvent[]>
       }
     }
 
-    return events;
+    return createSuccessResponse(events, `Found ${events.length} Warriors games for ${date.toDateString()}`);
   } catch (error) {
-    console.error('Error fetching Warriors schedule:', error);
-    return [];
+    return handleApiError(error, 'getWarriorsGamesForDate');
   }
 }
 
 /**
  * Get all Warriors games in a date range
  */
-export async function getWarriorsGamesInRange(startDate: Date, endDate: Date): Promise<VenueEvent[]> {
+export async function getWarriorsGamesInRange(startDate: Date, endDate: Date): Promise<ApiResponse<VenueEvent>> {
   // ESPN API returns full season schedule, so we just need to fetch once and filter
   try {
-    const response = await fetch(
+    const response = await fetchWithRetry(
       'https://site.api.espn.com/apis/site/v2/sports/basketball/nba/teams/gsw/schedule',
       { next: { revalidate: 1800 } }
     );
 
-    if (!response.ok) {
-      return [];
-    }
-
-    const data = await response.json();
+    const rawData = await response.json();
+    const data = validateApiResponse(rawData, ESPNNBAResponseSchema, 'ESPN NBA API');
     const events: VenueEvent[] = [];
 
     if (data.events && Array.isArray(data.events)) {
       for (const event of data.events) {
+        if (!event.date) continue;
+
         const gameDate = new Date(event.date);
+        if (isNaN(gameDate.getTime())) continue; // Skip invalid dates
 
         // Only include games in the date range
         if (gameDate < startDate || gameDate > endDate) continue;
 
         // Determine if this is a home game
         const competition = event.competitions?.[0];
-        if (!competition) continue;
+        if (!competition?.competitors) continue;
 
-        const homeTeam = competition.competitors?.find((c: any) => c.homeAway === 'home');
-        const awayTeam = competition.competitors?.find((c: any) => c.homeAway === 'away');
+        const homeTeam = competition.competitors.find((c: any) => c?.homeAway === 'home');
+        const awayTeam = competition.competitors.find((c: any) => c?.homeAway === 'away');
 
         const isWarriorsHome = homeTeam?.team?.abbreviation === 'GS' || homeTeam?.team?.abbreviation === 'GSW';
 
@@ -165,9 +177,8 @@ export async function getWarriorsGamesInRange(startDate: Date, endDate: Date): P
       }
     }
 
-    return events;
+    return createSuccessResponse(events, `Found ${events.length} Warriors games in date range`);
   } catch (error) {
-    console.error('Error fetching Warriors schedule range:', error);
-    return [];
+    return handleApiError(error, 'getWarriorsGamesInRange');
   }
 }
