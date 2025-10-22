@@ -1,10 +1,13 @@
 // GTFS Static Schedule Parser for Caltrain
 // Fetches and parses GTFS static data from 511.org API
+// Optimized with pre-parsing, indexing, and caching
 
 import { Train } from './types';
 import { getStationById, stations } from './stations';
 import { TripUpdate, getTripDelay } from './gtfs-realtime';
 import { TrainDelay } from './caltrain-alerts-scraper';
+import { cached, CacheConfigs, warmCache } from './cache-utils';
+import { fetchWithTimeout, createCacheKey } from './api-utils';
 
 interface GTFSStopTime {
   trip_id: string;
@@ -42,21 +45,123 @@ interface GTFSCalendarDate {
   exception_type: string; // 1 = service added, 2 = service removed
 }
 
-let gtfsCache: {
+// Optimized cache with indexed data structures for O(1) lookups
+interface OptimizedGTFSCache {
+  // Raw data arrays (for backward compatibility)
   stopTimes: GTFSStopTime[];
   trips: GTFSTrip[];
   calendar: GTFSCalendar[];
   calendarDates: GTFSCalendarDate[];
+
+  // Indexed data structures for fast lookups
+  tripsByServiceId: Map<string, GTFSTrip[]>;
+  tripsByDirection: Map<string, GTFSTrip[]>;
+  stopTimesByTripId: Map<string, GTFSStopTime[]>;
+  stopTimesByStopId: Map<string, GTFSStopTime[]>;
+  calendarByServiceId: Map<string, GTFSCalendar>;
+  calendarDatesByServiceId: Map<string, GTFSCalendarDate[]>;
+
   lastFetch: Date | null;
-} = {
+  isIndexed: boolean;
+}
+
+const gtfsCache: OptimizedGTFSCache = {
   stopTimes: [],
   trips: [],
   calendar: [],
   calendarDates: [],
+  tripsByServiceId: new Map(),
+  tripsByDirection: new Map(),
+  stopTimesByTripId: new Map(),
+  stopTimesByStopId: new Map(),
+  calendarByServiceId: new Map(),
+  calendarDatesByServiceId: new Map(),
   lastFetch: null,
+  isIndexed: false
 };
 
 const CACHE_DURATION_HOURS = 24; // Cache GTFS data for 24 hours
+
+/**
+ * Build indexed data structures for fast lookups
+ */
+function buildGTFSIndexes(): void {
+  if (gtfsCache.isIndexed) return;
+
+  console.log('Building GTFS indexes for optimized lookups...');
+
+  // Clear existing indexes
+  gtfsCache.tripsByServiceId.clear();
+  gtfsCache.tripsByDirection.clear();
+  gtfsCache.stopTimesByTripId.clear();
+  gtfsCache.stopTimesByStopId.clear();
+  gtfsCache.calendarByServiceId.clear();
+  gtfsCache.calendarDatesByServiceId.clear();
+
+  // Index trips by service_id
+  for (const trip of gtfsCache.trips) {
+    if (!gtfsCache.tripsByServiceId.has(trip.service_id)) {
+      gtfsCache.tripsByServiceId.set(trip.service_id, []);
+    }
+    gtfsCache.tripsByServiceId.get(trip.service_id)!.push(trip);
+
+    // Index trips by direction
+    const directionKey = `${trip.service_id}:${trip.direction_id}`;
+    if (!gtfsCache.tripsByDirection.has(directionKey)) {
+      gtfsCache.tripsByDirection.set(directionKey, []);
+    }
+    gtfsCache.tripsByDirection.get(directionKey)!.push(trip);
+  }
+
+  // Index stop times by trip_id and stop_id
+  for (const stopTime of gtfsCache.stopTimes) {
+    // By trip_id
+    if (!gtfsCache.stopTimesByTripId.has(stopTime.trip_id)) {
+      gtfsCache.stopTimesByTripId.set(stopTime.trip_id, []);
+    }
+    gtfsCache.stopTimesByTripId.get(stopTime.trip_id)!.push(stopTime);
+
+    // By stop_id
+    if (!gtfsCache.stopTimesByStopId.has(stopTime.stop_id)) {
+      gtfsCache.stopTimesByStopId.set(stopTime.stop_id, []);
+    }
+    gtfsCache.stopTimesByStopId.get(stopTime.stop_id)!.push(stopTime);
+  }
+
+  // Index calendar by service_id
+  for (const calendar of gtfsCache.calendar) {
+    gtfsCache.calendarByServiceId.set(calendar.service_id, calendar);
+  }
+
+  // Index calendar dates by service_id
+  for (const calendarDate of gtfsCache.calendarDates) {
+    if (!gtfsCache.calendarDatesByServiceId.has(calendarDate.service_id)) {
+      gtfsCache.calendarDatesByServiceId.set(calendarDate.service_id, []);
+    }
+    gtfsCache.calendarDatesByServiceId.get(calendarDate.service_id)!.push(calendarDate);
+  }
+
+  gtfsCache.isIndexed = true;
+  console.log(`GTFS indexes built: ${gtfsCache.tripsByServiceId.size} services, ${gtfsCache.stopTimesByTripId.size} trips`);
+}
+
+/**
+ * Pre-warm GTFS cache at application startup
+ * This function should be called during application initialization
+ */
+export async function warmGTFSCache(): Promise<void> {
+  console.log('Warming GTFS cache at startup...');
+  try {
+    const loaded = await fetchGTFSData();
+    if (loaded) {
+      console.log('GTFS cache warmed successfully');
+    } else {
+      console.warn('Failed to warm GTFS cache');
+    }
+  } catch (error) {
+    console.error('Error warming GTFS cache:', error);
+  }
+}
 
 /**
  * Get the current date/time in Pacific Time
@@ -207,6 +312,10 @@ async function loadLocalGTFSData(): Promise<boolean> {
     gtfsCache.calendarDates = parseCSV(calendarDatesData);
 
     gtfsCache.lastFetch = new Date();
+    gtfsCache.isIndexed = false; // Mark for re-indexing
+
+    // Build indexes for fast lookups
+    buildGTFSIndexes();
 
     console.log(`GTFS data loaded from local files: ${gtfsCache.stopTimes.length} stop times, ${gtfsCache.trips.length} trips`);
     return true;
@@ -269,6 +378,10 @@ async function fetchGTFSData(): Promise<boolean> {
         : [];
 
       gtfsCache.lastFetch = new Date();
+      gtfsCache.isIndexed = false; // Mark for re-indexing
+
+      // Build indexes for fast lookups
+      buildGTFSIndexes();
 
       console.log(`GTFS data loaded from remote: ${gtfsCache.stopTimes.length} stop times, ${gtfsCache.trips.length} trips`);
       return true;
@@ -384,10 +497,6 @@ export async function getScheduledTrains(
 
   console.log(`Active service ID: ${serviceId} for date ${date.toLocaleDateString()}`);
 
-  // Get all trips for this service
-  const activeTrips = gtfsCache.trips.filter((trip) => trip.service_id === serviceId);
-  console.log(`Found ${activeTrips.length} active trips for service ${serviceId}`);
-
   // Determine direction based on actual station geographic order
   // Stations array is ordered north to south, so we can use array indices
   const originIndex = stations.findIndex(s => s.id === originStationId);
@@ -407,6 +516,11 @@ export async function getScheduledTrains(
 
   console.log(`Looking for trains from ${originStation.name} (${originStopId}) to ${destinationStation.name} (${destStopId}), direction=${directionId}`);
 
+  // Get all trips for this service and direction using indexed lookup
+  const directionKey = `${serviceId}:${directionId}`;
+  const activeTrips = gtfsCache.tripsByDirection.get(directionKey) || [];
+  console.log(`Found ${activeTrips.length} active trips for service ${serviceId} in direction ${isNorthbound ? 'Northbound' : 'Southbound'}`);
+
   // Get current time for comparison
   const currentTimeMs = date.getTime();
 
@@ -414,15 +528,12 @@ export async function getScheduledTrains(
 
   try {
     for (const trip of activeTrips) {
-      if (trip.direction_id !== directionId) continue;
+      // No need to check direction since we already filtered by direction
 
-    // Find stop times for this trip at origin and destination
-    const originStop = gtfsCache.stopTimes.find(
-      (st) => st.trip_id === trip.trip_id && st.stop_id === originStopId
-    );
-    const destStop = gtfsCache.stopTimes.find(
-      (st) => st.trip_id === trip.trip_id && st.stop_id === destStopId
-    );
+    // Find stop times for this trip at origin and destination using indexed lookup
+    const tripStopTimes = gtfsCache.stopTimesByTripId.get(trip.trip_id) || [];
+    const originStop = tripStopTimes.find(st => st.stop_id === originStopId);
+    const destStop = tripStopTimes.find(st => st.stop_id === destStopId);
 
     if (!originStop || !destStop) continue;
 

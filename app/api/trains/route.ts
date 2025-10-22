@@ -5,6 +5,9 @@ import { fetchTripUpdates, getTripDelay } from '@/lib/gtfs-realtime';
 import { getScheduledTrains } from '@/lib/gtfs-static';
 import { parseAlertsFromText, extractTrainDelays, fetchCaltrainAlerts } from '@/lib/caltrain-alerts-scraper';
 import { getAllTrainDelaysFromTwitter } from '@/lib/twitter-alerts-scraper';
+import { cached, CacheConfigs, getCachedSync } from '@/lib/cache-utils';
+import { handleAPIError, createCacheKey } from '@/lib/api-utils';
+import { compressResponse } from '@/lib/compression-utils';
 
 export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams;
@@ -41,12 +44,21 @@ export async function GET(request: NextRequest) {
     console.warn('✗ GTFS-Realtime unavailable from 511.org - will use backup delay sources');
   }
 
-  // Fetch Twitter alerts as backup delay source (when GTFS-RT unavailable)
+  // Fetch Twitter alerts as backup delay source (when GTFS-RT unavailable) with caching
   let twitterDelays = new Map<string, number>();
   if (!hasGTFSRealtime) {
     try {
       console.log('Fetching backup delay data from @CaltrainAlerts Twitter...');
-      twitterDelays = await getAllTrainDelaysFromTwitter();
+      const cacheKey = createCacheKey('twitter-delays', new Date().toISOString().split('T')[0]);
+
+      // Use cached data with 5-minute TTL to reduce scraping load
+      const delaysArray = await cached(cacheKey, async () => {
+        const delays = await getAllTrainDelaysFromTwitter();
+        return Array.from(delays.entries());
+      }, { ttl: 5 * 60 * 1000, staleWhileRevalidate: 10 * 60 * 1000 }); // 5min TTL, 10min stale
+
+      twitterDelays = new Map(delaysArray);
+
       if (twitterDelays.size > 0) {
         console.log(`✓ Twitter backup: Found delays for ${twitterDelays.size} trains`);
       } else {
@@ -54,6 +66,14 @@ export async function GET(request: NextRequest) {
       }
     } catch (error) {
       console.error('✗ Twitter backup failed:', error);
+
+      // Try to get cached data as fallback
+      const cacheKey = createCacheKey('twitter-delays', new Date().toISOString().split('T')[0]);
+      const cachedDelays = getCachedSync<Array<[string, number]>>(cacheKey);
+      if (cachedDelays) {
+        twitterDelays = new Map(cachedDelays);
+        console.log(`Using cached Twitter delays: ${twitterDelays.size} trains`);
+      }
     }
   }
 
@@ -74,16 +94,33 @@ export async function GET(request: NextRequest) {
     }
   }
 
-  // If no query parameter, fetch alerts from Caltrain.com automatically
+  // If no query parameter, fetch alerts from Caltrain.com automatically with caching
   if (caltrainAlerts.size === 0) {
     try {
-      const scrapedAlerts = await fetchCaltrainAlerts();
-      caltrainAlerts = extractTrainDelays(scrapedAlerts);
+      const cacheKey = createCacheKey('caltrain-alerts', new Date().toISOString().split('T')[0]);
+
+      // Use cached data with 5-minute TTL to reduce scraping load
+      const alertsArray = await cached(cacheKey, async () => {
+        const scrapedAlerts = await fetchCaltrainAlerts();
+        const delays = extractTrainDelays(scrapedAlerts);
+        return Array.from(delays.entries());
+      }, { ttl: 5 * 60 * 1000, staleWhileRevalidate: 10 * 60 * 1000 }); // 5min TTL, 10min stale
+
+      caltrainAlerts = new Map(alertsArray);
+
       if (caltrainAlerts.size > 0) {
         console.log(`Auto-scraped ${caltrainAlerts.size} train delays from Caltrain.com`);
       }
     } catch (error) {
       console.error('Error auto-scraping Caltrain alerts:', error);
+
+      // Try to get cached data as fallback
+      const cacheKey = createCacheKey('caltrain-alerts', new Date().toISOString().split('T')[0]);
+      const cachedAlerts = getCachedSync<Array<[string, any]>>(cacheKey);
+      if (cachedAlerts) {
+        caltrainAlerts = new Map(cachedAlerts);
+        console.log(`Using cached Caltrain alerts: ${caltrainAlerts.size} delays`);
+      }
     }
   }
 
@@ -218,7 +255,7 @@ export async function GET(request: NextRequest) {
     }
   }
 
-  return NextResponse.json({
+  return compressResponse({
     trains,
     isMockData: !hasAnyDelaySource, // Flag to indicate mock delay data
     isMockSchedule: usingMockSchedule, // Flag to indicate mock schedule data
@@ -226,7 +263,7 @@ export async function GET(request: NextRequest) {
                  twitterDelays.size > 0 ? 'twitter' :
                  caltrainAlerts.size > 0 ? 'caltrain-alerts' :
                  'none'
-  }, {
+  }, request.headers.get('accept-encoding') || undefined, {
     headers: {
       'Cache-Control': 'public, s-maxage=30, stale-while-revalidate=60'
     }

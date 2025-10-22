@@ -1,5 +1,7 @@
 // GTFS-Realtime utilities for fetching Caltrain real-time data from 511.org
 import GtfsRealtimeBindings from 'gtfs-realtime-bindings';
+import { fetch511API, fetchWithTimeout, handleAPIError, isTimeoutError, createCacheKey } from './api-utils';
+import { cached, CacheConfigs } from './cache-utils';
 
 const CALTRAIN_AGENCY = 'CT';
 const API_BASE = 'http://api.511.org/transit';
@@ -45,7 +47,7 @@ export interface Alert {
 }
 
 /**
- * Fetch real-time trip updates from 511.org
+ * Fetch real-time trip updates from 511.org with timeout and caching
  */
 export async function fetchTripUpdates(): Promise<TripUpdate[]> {
   const apiKey = process.env.TRANSIT_API_KEY;
@@ -54,71 +56,74 @@ export async function fetchTripUpdates(): Promise<TripUpdate[]> {
     return [];
   }
 
+  const cacheKey = createCacheKey('gtfs-realtime', 'tripupdates', CALTRAIN_AGENCY);
+
   try {
-    const url = `${API_BASE}/tripupdates?api_key=${apiKey}&agency=${CALTRAIN_AGENCY}`;
-    const response = await fetch(url, {
-      next: { revalidate: 30 }, // Cache for 30 seconds
-    });
+    return await cached(cacheKey, async () => {
+      const response = await fetch511API('tripupdates', apiKey, {
+        timeout: 5000,
+        agency: CALTRAIN_AGENCY
+      });
 
-    if (!response.ok) {
-      throw new Error(`511.org API error: ${response.status}`);
-    }
+      if (!response.ok) {
+        throw new Error(`511.org API error: ${response.status}`);
+      }
 
-    const buffer = await response.arrayBuffer();
-    const feed = GtfsRealtimeBindings.transit_realtime.FeedMessage.decode(
-      new Uint8Array(buffer)
-    );
+      const buffer = await response.arrayBuffer();
+      const feed = GtfsRealtimeBindings.transit_realtime.FeedMessage.decode(
+        new Uint8Array(buffer)
+      );
 
-    const updates: TripUpdate[] = [];
+      const updates: TripUpdate[] = [];
 
-    for (const entity of feed.entity) {
-      if (entity.tripUpdate && entity.tripUpdate.trip) {
-        const trip = entity.tripUpdate.trip;
-        const stopTimeUpdates: StopTimeUpdate[] = [];
+      for (const entity of feed.entity) {
+        if (entity.tripUpdate && entity.tripUpdate.trip) {
+          const trip = entity.tripUpdate.trip;
+          const stopTimeUpdates: StopTimeUpdate[] = [];
 
-        for (const stu of entity.tripUpdate.stopTimeUpdate || []) {
-          stopTimeUpdates.push({
-            stopId: stu.stopId || '',
-            stopSequence: stu.stopSequence || 0,
-            arrival: stu.arrival
-              ? {
-                  delay: stu.arrival.delay || 0,
-                  time: typeof stu.arrival.time === 'number'
-                    ? stu.arrival.time
-                    : (stu.arrival.time?.toNumber() || 0),
-                }
-              : undefined,
-            departure: stu.departure
-              ? {
-                  delay: stu.departure.delay || 0,
-                  time: typeof stu.departure.time === 'number'
-                    ? stu.departure.time
-                    : (stu.departure.time?.toNumber() || 0),
-                }
-              : undefined,
-            scheduleRelationship: stu.scheduleRelationship?.toString(),
+          for (const stu of entity.tripUpdate.stopTimeUpdate || []) {
+            stopTimeUpdates.push({
+              stopId: stu.stopId || '',
+              stopSequence: stu.stopSequence || 0,
+              arrival: stu.arrival
+                ? {
+                    delay: stu.arrival.delay || 0,
+                    time: typeof stu.arrival.time === 'number'
+                      ? stu.arrival.time
+                      : (stu.arrival.time?.toNumber() || 0),
+                  }
+                : undefined,
+              departure: stu.departure
+                ? {
+                    delay: stu.departure.delay || 0,
+                    time: typeof stu.departure.time === 'number'
+                      ? stu.departure.time
+                      : (stu.departure.time?.toNumber() || 0),
+                  }
+                : undefined,
+              scheduleRelationship: stu.scheduleRelationship?.toString(),
+            });
+          }
+
+          updates.push({
+            tripId: trip.tripId || '',
+            routeId: trip.routeId || '',
+            startDate: trip.startDate || '',
+            startTime: trip.startTime || '',
+            stopTimeUpdates,
           });
         }
-
-        updates.push({
-          tripId: trip.tripId || '',
-          routeId: trip.routeId || '',
-          startDate: trip.startDate || '',
-          startTime: trip.startTime || '',
-          stopTimeUpdates,
-        });
       }
-    }
 
-    return updates;
+      return updates;
+    }, CacheConfigs.GTFS_REALTIME);
   } catch (error) {
-    console.error('Error fetching trip updates:', error);
-    return [];
+    return handleAPIError(error as Error, [], 'GTFS Trip Updates');
   }
 }
 
 /**
- * Fetch service alerts from 511.org
+ * Fetch service alerts from 511.org with timeout and caching
  */
 export async function fetchServiceAlerts(): Promise<Alert[]> {
   const apiKey = process.env.TRANSIT_API_KEY;
@@ -127,44 +132,50 @@ export async function fetchServiceAlerts(): Promise<Alert[]> {
     return [];
   }
 
+  const cacheKey = createCacheKey('gtfs-realtime', 'servicealerts', CALTRAIN_AGENCY);
+
   try {
-    const url = `${API_BASE}/servicealerts?api_key=${apiKey}&agency=${CALTRAIN_AGENCY}&format=json`;
-    const response = await fetch(url, {
-      next: { revalidate: 300 }, // Cache for 5 minutes
-    });
+    return await cached(cacheKey, async () => {
+      const response = await fetchWithTimeout(
+        `${API_BASE}/servicealerts?api_key=${apiKey}&agency=${CALTRAIN_AGENCY}&format=json`,
+        {
+          timeout: 5000,
+          next: { revalidate: 300 } // Cache for 5 minutes
+        }
+      );
 
-    if (!response.ok) {
-      throw new Error(`511.org API error: ${response.status}`);
-    }
-
-    const data = await response.json();
-    const alerts: Alert[] = [];
-
-    // Parse JSON format service alerts
-    if (data.ServiceDelivery?.SituationExchangeDelivery?.Situations?.PtSituationElement) {
-      const situations = Array.isArray(data.ServiceDelivery.SituationExchangeDelivery.Situations.PtSituationElement)
-        ? data.ServiceDelivery.SituationExchangeDelivery.Situations.PtSituationElement
-        : [data.ServiceDelivery.SituationExchangeDelivery.Situations.PtSituationElement];
-
-      for (const situation of situations) {
-        const severity = mapSeverity(situation.Severity);
-
-        alerts.push({
-          id: situation.SituationNumber || Math.random().toString(),
-          severity,
-          headerText: situation.Summary?.[0]?._ || 'Service Alert',
-          descriptionText: situation.Description?.[0]?._ || '',
-          url: situation.InfoLinks?.InfoLink?.[0]?.Uri || undefined,
-          activePeriods: [],
-          informedEntities: [],
-        });
+      if (!response.ok) {
+        throw new Error(`511.org API error: ${response.status}`);
       }
-    }
 
-    return alerts;
+      const data = await response.json();
+      const alerts: Alert[] = [];
+
+      // Parse JSON format service alerts
+      if (data.ServiceDelivery?.SituationExchangeDelivery?.Situations?.PtSituationElement) {
+        const situations = Array.isArray(data.ServiceDelivery.SituationExchangeDelivery.Situations.PtSituationElement)
+          ? data.ServiceDelivery.SituationExchangeDelivery.Situations.PtSituationElement
+          : [data.ServiceDelivery.SituationExchangeDelivery.Situations.PtSituationElement];
+
+        for (const situation of situations) {
+          const severity = mapSeverity(situation.Severity);
+
+          alerts.push({
+            id: situation.SituationNumber || Math.random().toString(),
+            severity,
+            headerText: situation.Summary?.[0]?._ || 'Service Alert',
+            descriptionText: situation.Description?.[0]?._ || '',
+            url: situation.InfoLinks?.InfoLink?.[0]?.Uri || undefined,
+            activePeriods: [],
+            informedEntities: [],
+          });
+        }
+      }
+
+      return alerts;
+    }, CacheConfigs.ALERTS);
   } catch (error) {
-    console.error('Error fetching service alerts:', error);
-    return [];
+    return handleAPIError(error as Error, [], 'GTFS Service Alerts');
   }
 }
 
