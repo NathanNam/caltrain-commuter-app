@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { WeatherData } from '@/lib/types';
 import { getStationById } from '@/lib/stations';
 import { celsiusToFahrenheit, mpsToMph } from '@/lib/utils';
+import { fetchWeatherAPI, handleAPIError, createCacheKey } from '@/lib/api-utils';
+import { cached, CacheConfigs, getCachedSync } from '@/lib/cache-utils';
 
 export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams;
@@ -39,20 +41,14 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // Fetch weather from OpenWeatherMap API
+    // Fetch weather from OpenWeatherMap API with timeout and caching
     const apiKey = process.env.WEATHER_API_KEY;
     const { lat, lng } = station.coordinates;
+    const cacheKey = createCacheKey('weather', stationId, lat.toString(), lng.toString());
 
-    const response = await fetch(
-      `https://api.openweathermap.org/data/2.5/weather?lat=${lat}&lon=${lng}&appid=${apiKey}&units=metric`,
-      { next: { revalidate: 600 } } // Cache for 10 minutes
-    );
-
-    if (!response.ok) {
-      throw new Error(`Weather API returned ${response.status}`);
-    }
-
-    const data = await response.json();
+    const data = await cached(cacheKey, async () => {
+      return await fetchWeatherAPI(lat, lng, apiKey, { timeout: 5000 });
+    }, CacheConfigs.WEATHER);
 
     const weatherData: WeatherData = {
       temperature: celsiusToFahrenheit(data.main.temp),
@@ -73,7 +69,33 @@ export async function GET(request: NextRequest) {
 
   } catch (error) {
     console.error('Weather API error:', error);
-    // Return mock data as fallback
+
+    // Try to get cached data as fallback
+    const cacheKey = createCacheKey('weather', stationId, station.coordinates.lat.toString(), station.coordinates.lng.toString());
+    const cachedData = getCachedSync<any>(cacheKey);
+
+    if (cachedData) {
+      console.log('Using cached weather data as fallback');
+      const weatherData: WeatherData = {
+        temperature: celsiusToFahrenheit(cachedData.main.temp),
+        description: cachedData.weather[0].description,
+        icon: cachedData.weather[0].icon,
+        windSpeed: mpsToMph(cachedData.wind.speed),
+        humidity: cachedData.main.humidity
+      };
+
+      return NextResponse.json({
+        ...weatherData,
+        isMockData: false,
+        isStaleData: true
+      }, {
+        headers: {
+          'Cache-Control': 'public, s-maxage=300'
+        }
+      });
+    }
+
+    // Return mock data as final fallback
     return NextResponse.json(
       {
         ...generateMockWeather(station.coordinates.lat),

@@ -8,6 +8,9 @@ import { getValkyriesGamesForDate } from '@/lib/wnba-schedule';
 import { getGiantsGamesForDate } from '@/lib/mlb-schedule';
 import { get49ersGamesForDate } from '@/lib/nfl-schedule';
 import { getSharksGamesForDate } from '@/lib/nhl-schedule';
+import { fetchAllSettled, fetchTicketmasterAPI, handleAPIError } from '@/lib/api-utils';
+import { cached, CacheConfigs } from '@/lib/cache-utils';
+import { compressResponse } from '@/lib/compression-utils';
 
 // This API fetches events from multiple venues near Caltrain stations
 // Supports: Oracle Park, Chase Center, Bill Graham, The Fillmore, SAP Center, Levi's Stadium, and more
@@ -40,7 +43,20 @@ export async function GET(request: NextRequest) {
   // This ensures "2025-10-18" means Oct 18 PDT, not Oct 17 at 5pm PDT
   const dateObj = new Date(dateStr + 'T12:00:00-07:00'); // Noon Pacific Time
 
-  // Fetch all events in parallel from all sources
+  // Fetch all events in parallel from all sources using Promise.allSettled for graceful error handling
+  const sportsAPIRequests = [
+    () => getWarriorsGamesForDate(dateObj),
+    () => getValkyriesGamesForDate(dateObj),
+    () => getGiantsGamesForDate(dateObj),
+    () => get49ersGamesForDate(dateObj),
+    () => getSharksGamesForDate(dateObj),
+    () => getMosconeEventsRuntime(dateObj),
+    () => Promise.resolve(getChaseCenterEventsForDate(dateObj))
+  ];
+
+  const sportsResults = await fetchAllSettled(sportsAPIRequests);
+
+  // Extract successful results and log failures
   const [
     warriorsGames,
     valkyriesGames,
@@ -49,15 +65,15 @@ export async function GET(request: NextRequest) {
     sharksGames,
     mosconeEvents,
     chaseCenterEvents
-  ] = await Promise.all([
-    getWarriorsGamesForDate(dateObj),
-    getValkyriesGamesForDate(dateObj),
-    getGiantsGamesForDate(dateObj),
-    get49ersGamesForDate(dateObj),
-    getSharksGamesForDate(dateObj),
-    getMosconeEventsRuntime(dateObj),
-    Promise.resolve(getChaseCenterEventsForDate(dateObj))
-  ]);
+  ] = sportsResults.map((result, index) => {
+    if (result.status === 'fulfilled') {
+      return result.value;
+    } else {
+      const apiNames = ['Warriors', 'Valkyries', 'Giants', '49ers', 'Sharks', 'Moscone', 'Chase Center'];
+      console.error(`${apiNames[index]} API failed:`, result.reason);
+      return [];
+    }
+  });
 
   // Combine all events from sports APIs first (highest priority)
   const allEvents: VenueEvent[] = [
@@ -104,10 +120,10 @@ export async function GET(request: NextRequest) {
         }
       }
 
-      return NextResponse.json({
+      return compressResponse({
         events: allEvents,
         isMockData: false
-      }, {
+      }, request.headers.get('accept-encoding') || undefined, {
         headers: {
           'Cache-Control': 'public, s-maxage=1800, stale-while-revalidate=3600' // Cache for 30 min
         }
@@ -130,10 +146,10 @@ export async function GET(request: NextRequest) {
     }
   }
 
-  return NextResponse.json({
+  return compressResponse({
     events: allEvents,
     isMockData: false
-  }, {
+  }, request.headers.get('accept-encoding') || undefined, {
     headers: {
       'Cache-Control': 'public, s-maxage=1800, stale-while-revalidate=3600' // Cache for 30 min
     }
@@ -208,7 +224,7 @@ function generateMockEvents(date: string): VenueEvent[] {
   return events;
 }
 
-// Fetch events from Ticketmaster API for all SF venues
+// Fetch events from Ticketmaster API for all SF venues with optimized parallel processing
 async function fetchTicketmasterEvents(date: string): Promise<VenueEvent[]> {
   const apiKey = process.env.TICKETMASTER_API_KEY;
   if (!apiKey) return [];
@@ -219,21 +235,26 @@ async function fetchTicketmasterEvents(date: string): Promise<VenueEvent[]> {
   const venueIds = Object.values(ticketmasterVenueIds);
 
   try {
-    // Fetch events for all venues (you can parallelize this for better performance)
-    const promises = venueIds.map(venueId =>
-      fetch(
-        `https://app.ticketmaster.com/discovery/v2/events.json?apikey=${apiKey}&venueId=${venueId}&startDateTime=${date}T00:00:00Z&endDateTime=${date}T23:59:59Z&size=20`,
-        { next: { revalidate: 1800 } }
-      ).then(res => res.ok ? res.json() : null)
+    // Fetch events for all venues in parallel using Promise.allSettled for graceful error handling
+    const venueRequests = venueIds.map(venueId =>
+      () => fetchTicketmasterAPI(venueId, date, apiKey, { timeout: 10000 })
     );
 
-    const results = await Promise.all(promises);
+    const results = await fetchAllSettled(venueRequests);
 
-    // Process results from all venues
-    for (const result of results) {
-      if (!result || !result._embedded?.events) continue;
+    // Process successful results and log failures
+    for (let i = 0; i < results.length; i++) {
+      const result = results[i];
 
-      for (const event of result._embedded.events) {
+      if (result.status === 'rejected') {
+        console.error(`Ticketmaster venue ${venueIds[i]} failed:`, result.reason);
+        continue;
+      }
+
+      const data = result.value;
+      if (!data || !data._embedded?.events) continue;
+
+      for (const event of data._embedded.events) {
         const venueName = event._embedded?.venues?.[0]?.name || 'Unknown Venue';
 
         // FILTER: Only include SF Bay Area venues
