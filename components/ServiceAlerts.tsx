@@ -2,23 +2,45 @@
 
 import { useEffect, useState } from 'react';
 import { ServiceAlert } from '@/lib/types';
+import { ErrorBoundary, useErrorHandler, SimpleErrorFallback } from './ErrorBoundary';
 
-export default function ServiceAlerts() {
+function ServiceAlertsContent() {
   const [alerts, setAlerts] = useState<ServiceAlert[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [isMockData, setIsMockData] = useState(false);
+  const handleError = useErrorHandler();
 
   useEffect(() => {
     const fetchAlerts = async () => {
+      setLoading(true);
+      setError(null);
+
       try {
         const response = await fetch('/api/alerts');
-        if (response.ok) {
-          const data = await response.json();
-          setAlerts(data.alerts || []);
-          setIsMockData(data.isMockData || false);
+
+        if (!response.ok) {
+          throw new Error(`Failed to fetch alerts: ${response.status} ${response.statusText}`);
         }
-      } catch (error) {
-        console.error('Error fetching alerts:', error);
+
+        const data = await response.json();
+
+        // Validate response structure
+        if (!data || typeof data !== 'object') {
+          throw new Error('Invalid response format from alerts API');
+        }
+
+        setAlerts(Array.isArray(data.alerts) ? data.alerts : []);
+        setIsMockData(Boolean(data.isMockData));
+      } catch (err) {
+        const errorMessage = err instanceof Error ? err.message : 'An error occurred while fetching alerts';
+        setError(errorMessage);
+        setAlerts([]);
+
+        // Report async errors to error boundary
+        if (err instanceof Error) {
+          handleError(err);
+        }
       } finally {
         setLoading(false);
       }
@@ -29,14 +51,42 @@ export default function ServiceAlerts() {
     // Auto-refresh every 5 minutes
     const interval = setInterval(fetchAlerts, 300000);
     return () => clearInterval(interval);
-  }, []);
+  }, [handleError]);
 
   if (loading) {
-    return null;
+    return (
+      <div className="bg-white rounded-lg shadow-md p-6">
+        <h2 className="text-xl font-bold text-gray-800 mb-4">Service Alerts</h2>
+        <div className="animate-pulse space-y-3">
+          <div className="bg-gray-200 h-16 rounded" />
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="bg-white rounded-lg shadow-md p-6">
+        <h2 className="text-xl font-bold text-gray-800 mb-4">Service Alerts</h2>
+        <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+          <div className="flex items-center">
+            <svg className="h-5 w-5 text-red-400 mr-2" viewBox="0 0 20 20" fill="currentColor">
+              <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+            </svg>
+            <span className="text-red-800 text-sm">{error}</span>
+          </div>
+        </div>
+      </div>
+    );
   }
 
   if (alerts.length === 0) {
-    return null;
+    return (
+      <div className="bg-white rounded-lg shadow-md p-6">
+        <h2 className="text-xl font-bold text-gray-800 mb-4">Service Alerts</h2>
+        <p className="text-gray-600 text-sm">No service alerts at this time.</p>
+      </div>
+    );
   }
 
   const severityStyles = {
@@ -113,5 +163,21 @@ export default function ServiceAlerts() {
         );
       })}
     </div>
+  );
+}
+
+// Export the component wrapped with ErrorBoundary
+export default function ServiceAlerts() {
+  return (
+    <ErrorBoundary
+      fallback={
+        <SimpleErrorFallback
+          message="Unable to load service alerts"
+          resetError={() => window.location.reload()}
+        />
+      }
+    >
+      <ServiceAlertsContent />
+    </ErrorBoundary>
   );
 }

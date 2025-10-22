@@ -3,17 +3,19 @@
 import { useEffect, useState } from 'react';
 import { WeatherData } from '@/lib/types';
 import { getStationById } from '@/lib/stations';
+import { ErrorBoundary, useErrorHandler, SimpleErrorFallback } from './ErrorBoundary';
 
 interface WeatherWidgetProps {
   stationId: string;
   label: string;
 }
 
-export default function WeatherWidget({ stationId, label }: WeatherWidgetProps) {
+function WeatherWidgetContent({ stationId, label }: WeatherWidgetProps) {
   const [weather, setWeather] = useState<WeatherData | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isMockData, setIsMockData] = useState(false);
+  const handleError = useErrorHandler();
 
   useEffect(() => {
     if (!stationId) {
@@ -29,15 +31,27 @@ export default function WeatherWidget({ stationId, label }: WeatherWidgetProps) 
         const response = await fetch(`/api/weather?station=${stationId}`);
 
         if (!response.ok) {
-          throw new Error('Failed to fetch weather data');
+          throw new Error(`Failed to fetch weather data: ${response.status} ${response.statusText}`);
         }
 
         const data = await response.json();
+
+        // Validate response structure
+        if (!data || typeof data !== 'object') {
+          throw new Error('Invalid response format from weather API');
+        }
+
         setWeather(data);
-        setIsMockData(data.isMockData || false);
+        setIsMockData(Boolean(data.isMockData));
       } catch (err) {
-        setError(err instanceof Error ? err.message : 'An error occurred');
+        const errorMessage = err instanceof Error ? err.message : 'An error occurred while fetching weather';
+        setError(errorMessage);
         setWeather(null);
+
+        // Report async errors to error boundary
+        if (err instanceof Error) {
+          handleError(err);
+        }
       } finally {
         setLoading(false);
       }
@@ -49,7 +63,7 @@ export default function WeatherWidget({ stationId, label }: WeatherWidgetProps) 
     const interval = setInterval(fetchWeather, 600000);
 
     return () => clearInterval(interval);
-  }, [stationId]);
+  }, [stationId, handleError]);
 
   const station = getStationById(stationId);
 
@@ -141,5 +155,21 @@ export default function WeatherWidget({ stationId, label }: WeatherWidgetProps) 
         </div>
       </div>
     </div>
+  );
+}
+
+// Export the component wrapped with ErrorBoundary
+export default function WeatherWidget(props: WeatherWidgetProps) {
+  return (
+    <ErrorBoundary
+      fallback={
+        <SimpleErrorFallback
+          message="Unable to load weather information"
+          resetError={() => window.location.reload()}
+        />
+      }
+    >
+      <WeatherWidgetContent {...props} />
+    </ErrorBoundary>
   );
 }

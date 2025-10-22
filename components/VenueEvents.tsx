@@ -2,13 +2,15 @@
 
 import { useEffect, useState } from 'react';
 import { VenueEvent } from '@/lib/types';
+import { ErrorBoundary, useErrorHandler, SimpleErrorFallback } from './ErrorBoundary';
 import { getStationById } from '@/lib/stations';
 
-export default function VenueEvents() {
+function VenueEventsContent() {
   const [events, setEvents] = useState<VenueEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isMockData, setIsMockData] = useState(false);
+  const handleError = useErrorHandler();
 
   useEffect(() => {
     const fetchEvents = async () => {
@@ -19,15 +21,27 @@ export default function VenueEvents() {
         const response = await fetch('/api/events');
 
         if (!response.ok) {
-          throw new Error('Failed to fetch events');
+          throw new Error(`Failed to fetch events: ${response.status} ${response.statusText}`);
         }
 
         const data = await response.json();
-        setEvents(data.events || []);
-        setIsMockData(data.isMockData || false);
+
+        // Validate response structure
+        if (!data || typeof data !== 'object') {
+          throw new Error('Invalid response format from events API');
+        }
+
+        setEvents(Array.isArray(data.events) ? data.events : []);
+        setIsMockData(Boolean(data.isMockData));
       } catch (err) {
-        setError(err instanceof Error ? err.message : 'An error occurred');
+        const errorMessage = err instanceof Error ? err.message : 'An error occurred while fetching events';
+        setError(errorMessage);
         setEvents([]);
+
+        // Report async errors to error boundary
+        if (err instanceof Error) {
+          handleError(err);
+        }
       } finally {
         setLoading(false);
       }
@@ -39,7 +53,7 @@ export default function VenueEvents() {
     const interval = setInterval(fetchEvents, 1800000);
 
     return () => clearInterval(interval);
-  }, []);
+  }, [handleError]);
 
   if (loading) {
     return (
@@ -53,11 +67,28 @@ export default function VenueEvents() {
   }
 
   if (error) {
-    return null; // Fail silently for non-critical feature
+    return (
+      <div className="bg-white rounded-lg shadow-md p-6">
+        <h2 className="text-xl font-bold text-gray-800 mb-4">Event Crowding Alerts</h2>
+        <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+          <div className="flex items-center">
+            <svg className="h-5 w-5 text-red-400 mr-2" viewBox="0 0 20 20" fill="currentColor">
+              <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+            </svg>
+            <span className="text-red-800 text-sm">{error}</span>
+          </div>
+        </div>
+      </div>
+    );
   }
 
   if (events.length === 0) {
-    return null; // Don't show anything if no events
+    return (
+      <div className="bg-white rounded-lg shadow-md p-6">
+        <h2 className="text-xl font-bold text-gray-800 mb-4">Event Crowding Alerts</h2>
+        <p className="text-gray-600 text-sm">No major events affecting Caltrain stations today.</p>
+      </div>
+    );
   }
 
   const getCrowdLevelColor = (level: string) => {
@@ -199,5 +230,21 @@ export default function VenueEvents() {
         </p>
       </div>
     </div>
+  );
+}
+
+// Export the component wrapped with ErrorBoundary
+export default function VenueEvents() {
+  return (
+    <ErrorBoundary
+      fallback={
+        <SimpleErrorFallback
+          message="Unable to load event information"
+          resetError={() => window.location.reload()}
+        />
+      }
+    >
+      <VenueEventsContent />
+    </ErrorBoundary>
   );
 }
