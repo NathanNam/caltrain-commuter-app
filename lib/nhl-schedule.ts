@@ -4,14 +4,28 @@
 // Documentation: https://github.com/Zmalski/NHL-API-Reference
 
 import { VenueEvent } from './types';
+import {
+  fetchWithRetry,
+  handleApiError,
+  createSuccessResponse,
+  ApiResponse,
+  validateApiResponse,
+  NHLGameSchema
+} from './error-handling';
+import { z } from 'zod';
 
 const SAN_JOSE_SHARKS_TEAM_CODE = 'SJS';
+
+// Schema for NHL API response
+const NHLResponseSchema = z.object({
+  games: z.array(NHLGameSchema).optional()
+});
 
 /**
  * Fetch Sharks games for a specific date
  * Uses NHL's free web API - no API key required
  */
-export async function getSharksGamesForDate(date: Date): Promise<VenueEvent[]> {
+export async function getSharksGamesForDate(date: Date): Promise<ApiResponse<VenueEvent>> {
   try {
     // Get the current season (e.g., 20252026 for 2025-26 season)
     const year = date.getFullYear();
@@ -29,17 +43,13 @@ export async function getSharksGamesForDate(date: Date): Promise<VenueEvent[]> {
       season = `${year - 1}${year}`;
     }
 
-    const response = await fetch(
+    const response = await fetchWithRetry(
       `https://api-web.nhle.com/v1/club-schedule-season/${SAN_JOSE_SHARKS_TEAM_CODE}/${season}`,
       { next: { revalidate: 1800 } } // Cache for 30 minutes
     );
 
-    if (!response.ok) {
-      console.error('NHL API error:', response.status);
-      return [];
-    }
-
-    const data = await response.json();
+    const rawData = await response.json();
+    const data = validateApiResponse(rawData, NHLResponseSchema, 'NHL API');
     const events: VenueEvent[] = [];
 
     // Get the target date string (YYYY-MM-DD) in Pacific Time
@@ -58,6 +68,7 @@ export async function getSharksGamesForDate(date: Date): Promise<VenueEvent[]> {
       for (const game of data.games) {
         // Game date is in YYYY-MM-DD format (already in Pacific Time from NHL API)
         const gameDateStr = game.gameDate;
+        if (!gameDateStr) continue;
 
         // Only include games on the target date (in Pacific Time)
         if (gameDateStr !== targetDatePacific) continue;
@@ -86,6 +97,7 @@ export async function getSharksGamesForDate(date: Date): Promise<VenueEvent[]> {
 
         // Parse game time (startTimeUTC is in ISO format)
         const gameDate = new Date(game.startTimeUTC);
+        if (isNaN(gameDate.getTime())) continue; // Skip invalid dates
 
         // Create event
         events.push({
@@ -101,10 +113,9 @@ export async function getSharksGamesForDate(date: Date): Promise<VenueEvent[]> {
       }
     }
 
-    return events;
+    return createSuccessResponse(events, `Found ${events.length} Sharks games for ${date.toDateString()}`);
   } catch (error) {
-    console.error('Error fetching Sharks schedule:', error);
-    return [];
+    return handleApiError(error, 'getSharksGamesForDate');
   }
 }
 

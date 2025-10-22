@@ -1,5 +1,14 @@
 // GTFS-Realtime utilities for fetching Caltrain real-time data from 511.org
 import GtfsRealtimeBindings from 'gtfs-realtime-bindings';
+import {
+  fetchWithRetry,
+  handleApiError,
+  createSuccessResponse,
+  createErrorResponse,
+  ApiResponse,
+  AppError,
+  ErrorType
+} from './error-handling';
 
 const CALTRAIN_AGENCY = 'CT';
 const API_BASE = 'http://api.511.org/transit';
@@ -47,27 +56,34 @@ export interface Alert {
 /**
  * Fetch real-time trip updates from 511.org
  */
-export async function fetchTripUpdates(): Promise<TripUpdate[]> {
+export async function fetchTripUpdates(): Promise<ApiResponse<TripUpdate>> {
   const apiKey = process.env.TRANSIT_API_KEY;
   if (!apiKey) {
     console.warn('TRANSIT_API_KEY not configured');
-    return [];
+    return createErrorResponse('TRANSIT_API_KEY not configured');
   }
 
   try {
     const url = `${API_BASE}/tripupdates?api_key=${apiKey}&agency=${CALTRAIN_AGENCY}`;
-    const response = await fetch(url, {
+    const response = await fetchWithRetry(url, {
       next: { revalidate: 30 }, // Cache for 30 seconds
     });
 
-    if (!response.ok) {
-      throw new Error(`511.org API error: ${response.status}`);
-    }
-
     const buffer = await response.arrayBuffer();
-    const feed = GtfsRealtimeBindings.transit_realtime.FeedMessage.decode(
-      new Uint8Array(buffer)
-    );
+
+    let feed;
+    try {
+      feed = GtfsRealtimeBindings.transit_realtime.FeedMessage.decode(
+        new Uint8Array(buffer)
+      );
+    } catch (decodeError) {
+      throw new AppError(
+        'Failed to decode GTFS-Realtime protobuf data',
+        ErrorType.PARSE_ERROR,
+        undefined,
+        { url, originalError: decodeError instanceof Error ? decodeError.message : String(decodeError) }
+      );
+    }
 
     const updates: TripUpdate[] = [];
 
@@ -110,43 +126,51 @@ export async function fetchTripUpdates(): Promise<TripUpdate[]> {
       }
     }
 
-    return updates;
+    return createSuccessResponse(updates, `Fetched ${updates.length} trip updates`);
   } catch (error) {
-    console.error('Error fetching trip updates:', error);
-    return [];
+    return handleApiError(error, 'fetchTripUpdates');
   }
 }
 
 /**
  * Fetch service alerts from 511.org
  */
-export async function fetchServiceAlerts(): Promise<Alert[]> {
+export async function fetchServiceAlerts(): Promise<ApiResponse<Alert>> {
   const apiKey = process.env.TRANSIT_API_KEY;
   if (!apiKey) {
     console.warn('TRANSIT_API_KEY not configured');
-    return [];
+    return createErrorResponse('TRANSIT_API_KEY not configured');
   }
 
   try {
     const url = `${API_BASE}/servicealerts?api_key=${apiKey}&agency=${CALTRAIN_AGENCY}&format=json`;
-    const response = await fetch(url, {
+    const response = await fetchWithRetry(url, {
       next: { revalidate: 300 }, // Cache for 5 minutes
     });
 
-    if (!response.ok) {
-      throw new Error(`511.org API error: ${response.status}`);
+    let data;
+    try {
+      data = await response.json();
+    } catch (parseError) {
+      throw new AppError(
+        'Failed to parse service alerts JSON response',
+        ErrorType.PARSE_ERROR,
+        undefined,
+        { url, originalError: parseError instanceof Error ? parseError.message : String(parseError) }
+      );
     }
 
-    const data = await response.json();
     const alerts: Alert[] = [];
 
     // Parse JSON format service alerts
-    if (data.ServiceDelivery?.SituationExchangeDelivery?.Situations?.PtSituationElement) {
+    if (data?.ServiceDelivery?.SituationExchangeDelivery?.Situations?.PtSituationElement) {
       const situations = Array.isArray(data.ServiceDelivery.SituationExchangeDelivery.Situations.PtSituationElement)
         ? data.ServiceDelivery.SituationExchangeDelivery.Situations.PtSituationElement
         : [data.ServiceDelivery.SituationExchangeDelivery.Situations.PtSituationElement];
 
       for (const situation of situations) {
+        if (!situation) continue;
+
         const severity = mapSeverity(situation.Severity);
 
         alerts.push({
@@ -161,10 +185,9 @@ export async function fetchServiceAlerts(): Promise<Alert[]> {
       }
     }
 
-    return alerts;
+    return createSuccessResponse(alerts, `Fetched ${alerts.length} service alerts`);
   } catch (error) {
-    console.error('Error fetching service alerts:', error);
-    return [];
+    return handleApiError(error, 'fetchServiceAlerts');
   }
 }
 
