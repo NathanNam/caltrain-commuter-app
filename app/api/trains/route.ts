@@ -31,13 +31,22 @@ export async function GET(request: NextRequest) {
 
   // Fetch real-time trip updates FIRST (before filtering trains by time)
   // This allows us to filter based on actual departure time (scheduled + delay)
-  const tripUpdates = await fetchTripUpdates();
-  const hasGTFSRealtime = tripUpdates.length > 0;
+  const tripUpdatesResponse = await fetchTripUpdates();
+  let tripUpdates: TripUpdate[] = [];
+  let hasGTFSRealtime = false;
 
-  if (hasGTFSRealtime) {
-    console.log(`✓ Fetched ${tripUpdates.length} trip updates from GTFS-Realtime (511.org)`);
-    console.log(`Trip IDs in GTFS-Realtime feed:`, tripUpdates.map(u => u.tripId).join(', '));
+  if (!tripUpdatesResponse.error) {
+    tripUpdates = tripUpdatesResponse.data;
+    hasGTFSRealtime = tripUpdates.length > 0;
+
+    if (hasGTFSRealtime) {
+      console.log(`✓ Fetched ${tripUpdates.length} trip updates from GTFS-Realtime (511.org)`);
+      console.log(`Trip IDs in GTFS-Realtime feed:`, tripUpdates.map(u => u.tripId).join(', '));
+    } else {
+      console.warn('✗ GTFS-Realtime unavailable from 511.org - will use backup delay sources');
+    }
   } else {
+    console.error('✗ GTFS-Realtime error:', tripUpdatesResponse.message);
     console.warn('✗ GTFS-Realtime unavailable from 511.org - will use backup delay sources');
   }
 
@@ -77,10 +86,14 @@ export async function GET(request: NextRequest) {
   // If no query parameter, fetch alerts from Caltrain.com automatically
   if (caltrainAlerts.size === 0) {
     try {
-      const scrapedAlerts = await fetchCaltrainAlerts();
-      caltrainAlerts = extractTrainDelays(scrapedAlerts);
-      if (caltrainAlerts.size > 0) {
-        console.log(`Auto-scraped ${caltrainAlerts.size} train delays from Caltrain.com`);
+      const scrapedAlertsResponse = await fetchCaltrainAlerts();
+      if (!scrapedAlertsResponse.error) {
+        caltrainAlerts = extractTrainDelays(scrapedAlertsResponse.data);
+        if (caltrainAlerts.size > 0) {
+          console.log(`Auto-scraped ${caltrainAlerts.size} train delays from Caltrain.com`);
+        }
+      } else {
+        console.error('Error auto-scraping Caltrain alerts:', scrapedAlertsResponse.message);
       }
     } catch (error) {
       console.error('Error auto-scraping Caltrain alerts:', error);

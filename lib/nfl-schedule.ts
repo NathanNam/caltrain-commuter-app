@@ -3,24 +3,34 @@
 // Source: https://site.api.espn.com/apis/site/v2/sports/football/nfl/teams/sf/schedule
 
 import { VenueEvent } from './types';
+import {
+  fetchWithRetry,
+  handleApiError,
+  createSuccessResponse,
+  ApiResponse,
+  validateApiResponse,
+  ESPNEventSchema
+} from './error-handling';
+import { z } from 'zod';
+
+// Schema for ESPN NFL API response
+const ESPNNFLResponseSchema = z.object({
+  events: z.array(ESPNEventSchema).optional()
+});
 
 /**
  * Fetch 49ers games for a specific date
  * Uses ESPN's free NFL API - no API key required
  */
-export async function get49ersGamesForDate(date: Date): Promise<VenueEvent[]> {
+export async function get49ersGamesForDate(date: Date): Promise<ApiResponse<VenueEvent>> {
   try {
-    const response = await fetch(
+    const response = await fetchWithRetry(
       'https://site.api.espn.com/apis/site/v2/sports/football/nfl/teams/sf/schedule',
       { next: { revalidate: 1800 } } // Cache for 30 minutes
     );
 
-    if (!response.ok) {
-      console.error('ESPN NFL API error:', response.status);
-      return [];
-    }
-
-    const data = await response.json();
+    const rawData = await response.json();
+    const data = validateApiResponse(rawData, ESPNNFLResponseSchema, 'ESPN NFL API');
     const events: VenueEvent[] = [];
 
     // Get the target date string (YYYY-MM-DD) in Pacific Time
@@ -92,43 +102,42 @@ export async function get49ersGamesForDate(date: Date): Promise<VenueEvent[]> {
       }
     }
 
-    return events;
+    return createSuccessResponse(events, `Found ${events.length} 49ers games for ${date.toDateString()}`);
   } catch (error) {
-    console.error('Error fetching 49ers schedule:', error);
-    return [];
+    return handleApiError(error, 'get49ersGamesForDate');
   }
 }
 
 /**
  * Get all 49ers games in a date range
  */
-export async function get49ersGamesInRange(startDate: Date, endDate: Date): Promise<VenueEvent[]> {
+export async function get49ersGamesInRange(startDate: Date, endDate: Date): Promise<ApiResponse<VenueEvent>> {
   try {
-    const response = await fetch(
+    const response = await fetchWithRetry(
       'https://site.api.espn.com/apis/site/v2/sports/football/nfl/teams/sf/schedule',
       { next: { revalidate: 1800 } }
     );
 
-    if (!response.ok) {
-      return [];
-    }
-
-    const data = await response.json();
+    const rawData = await response.json();
+    const data = validateApiResponse(rawData, ESPNNFLResponseSchema, 'ESPN NFL API');
     const events: VenueEvent[] = [];
 
     if (data.events && Array.isArray(data.events)) {
       for (const event of data.events) {
+        if (!event.date) continue;
+
         const gameDate = new Date(event.date);
+        if (isNaN(gameDate.getTime())) continue; // Skip invalid dates
 
         // Only include games in the date range
         if (gameDate < startDate || gameDate > endDate) continue;
 
         // Determine if this is a home game
         const competition = event.competitions?.[0];
-        if (!competition) continue;
+        if (!competition?.competitors) continue;
 
-        const homeTeam = competition.competitors?.find((c: any) => c.homeAway === 'home');
-        const awayTeam = competition.competitors?.find((c: any) => c.homeAway === 'away');
+        const homeTeam = competition.competitors.find((c: any) => c?.homeAway === 'home');
+        const awayTeam = competition.competitors.find((c: any) => c?.homeAway === 'away');
 
         const is49ersHome = homeTeam?.team?.abbreviation === 'SF';
 
@@ -157,9 +166,8 @@ export async function get49ersGamesInRange(startDate: Date, endDate: Date): Prom
       }
     }
 
-    return events;
+    return createSuccessResponse(events, `Found ${events.length} 49ers games in date range`);
   } catch (error) {
-    console.error('Error fetching 49ers schedule range:', error);
-    return [];
+    return handleApiError(error, 'get49ersGamesInRange');
   }
 }
