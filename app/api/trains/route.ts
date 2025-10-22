@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { Train } from '@/lib/types';
 import { getStationById } from '@/lib/stations';
-import { fetchTripUpdates, getTripDelay } from '@/lib/gtfs-realtime';
+import { fetchTripUpdates, getTripDelay, TripUpdate } from '@/lib/gtfs-realtime';
 import { getScheduledTrains } from '@/lib/gtfs-static';
 import { parseAlertsFromText, extractTrainDelays, fetchCaltrainAlerts } from '@/lib/caltrain-alerts-scraper';
 import { getAllTrainDelaysFromTwitter } from '@/lib/twitter-alerts-scraper';

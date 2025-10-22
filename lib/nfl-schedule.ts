@@ -85,9 +85,6 @@ export async function get49ersGamesForDate(date: Date): Promise<ApiResponse<Venu
           gameType = ' (Playoffs)';
         }
 
-        // Get week information
-        const weekText = event.week?.text || '';
-
         // Create event
         events.push({
           id: `nfl-49ers-${event.id}`,

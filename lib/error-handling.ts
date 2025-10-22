@@ -386,11 +386,12 @@ export function validateApiResponse<T>(
     return schema.parse(data);
   } catch (error) {
     if (error instanceof z.ZodError) {
+      const errorMessages = error.issues.map(e => e.message).join(', ');
       throw new AppError(
-        `Invalid API response format: ${error.errors.map(e => e.message).join(', ')}`,
+        `Invalid API response format: ${errorMessages}`,
         ErrorType.VALIDATION_ERROR,
         undefined,
-        { context, validationErrors: error.errors }
+        { context, validationErrors: error.issues }
       );
     }
     throw new AppError(
