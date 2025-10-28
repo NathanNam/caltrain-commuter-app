@@ -24,7 +24,7 @@ The live demo is fully functional with real-time features enabled!
 
 ## Overview
 
-This app provides comprehensive real-time information for Caltrain commuters across 25 main Caltrain stations from San Francisco to San Jose Diridon. Key capabilities include:
+This app provides comprehensive real-time information for Caltrain commuters across 23 main Caltrain stations from San Francisco to San Jose Diridon. Key capabilities include:
 
 - 🚆 **Real-time train delays** with triple-redundant delay tracking:
   - Primary: 511.org GTFS-Realtime API
@@ -32,7 +32,7 @@ This app provides comprehensive real-time information for Caltrain commuters acr
   - Fallback: Caltrain.com alerts scraping
 - 🌤️ **Live weather** for origin and destination stations
 - 🎫 **Event crowding alerts** for 9+ SF venues (Oracle Park, Chase Center, Moscone, etc.)
-- 📍 **25 main Caltrain stations** with GPS coordinates (excluding South County Connector stations)
+- 📍 **23 active Caltrain stations** with GPS coordinates (excluding closed stations and South County Connector)
 - 💾 **Save up to 5 routes** for quick access
 - 🔄 **Auto-refresh** with optimized caching
 
@@ -40,7 +40,8 @@ This app provides comprehensive real-time information for Caltrain commuters acr
 
 ## Features
 
-- **Station Selection**: Choose from 25 main Caltrain stations (SF to San Jose Diridon) with easy swap functionality
+- **Station Selection**: Choose from 23 active Caltrain stations (SF to San Jose Diridon) with easy swap functionality
+  - **Note**: Inactive stations (Broadway, Atherton) have been removed as Caltrain no longer stops there
   - **Note**: South County Connector stations (Tamien, Capitol, Blossom Hill, Morgan Hill, San Martin, Gilroy) are excluded as they're served by a separate 8XX bus service with limited schedule
 - **Train Schedules**: View next 5 upcoming trains with departure/arrival times and durations
   - **Schedule-aware**: Automatically adjusts for weekday, weekend, and holiday schedules
@@ -329,7 +330,7 @@ caltrain-commuter-app-no-instrumentation/
 │   ├── ServiceAlerts.tsx        # Real-time service alerts display
 │   └── SavedRoutes.tsx          # Saved routes manager
 ├── lib/
-│   ├── stations.ts              # All 31 Caltrain stations data
+│   ├── stations.ts              # All 29 Caltrain stations data (23 active + 6 South County)
 │   ├── types.ts                 # TypeScript interfaces
 │   ├── utils.ts                 # Utility functions
 │   ├── venues.ts                # Venue data for event tracking
@@ -363,8 +364,9 @@ The app includes official Caltrain schedule data in the `/data/gtfs/` directory:
 - ✅ **Real train times** from Caltrain's official timetables
 - ✅ **Actual train numbers** (123, 125, 127, etc.)
 - ✅ **Weekday/weekend/holiday schedules** automatically detected
-- ✅ **Schedule data for 31 Caltrain stations** (SF to Gilroy)
-  - App allows selection of 25 main stations (SF to San Jose Diridon)
+- ✅ **Schedule data for 29 Caltrain stations** (SF to Gilroy)
+  - App allows selection of 23 active stations (SF to San Jose Diridon)
+  - Inactive stations removed: Broadway, Atherton (Caltrain no longer stops)
   - South County stations excluded from UI as they're served by 8XX bus connector
 - ✅ **Works offline** - no API key required for basic schedules
 
@@ -396,7 +398,7 @@ unzip -q /tmp/caltrain-gtfs.zip -d data/gtfs/
 ## Features Roadmap
 
 ### ✅ Phase 1 - MVP (Complete)
-- Station selection with 25 main stations
+- Station selection with 23 active stations (removed Broadway and Atherton - no longer in service)
 - Next 5 trains display
 - Weather for origin and destination
 - Saved routes (up to 5)
