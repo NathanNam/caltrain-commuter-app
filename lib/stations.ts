@@ -39,12 +39,6 @@ export const stations: Station[] = [
     coordinates: { lat: 37.6000, lng: -122.3867 }
   },
   {
-    id: 'broadway',
-    name: 'Broadway',
-    code: 'BROADWAY',
-    coordinates: { lat: 37.5871, lng: -122.3626 }
-  },
-  {
     id: 'burlingame',
     name: 'Burlingame',
     code: 'BURLINGAME',
@@ -85,12 +79,6 @@ export const stations: Station[] = [
     name: 'Redwood City',
     code: 'RW',
     coordinates: { lat: 37.4854, lng: -122.2314 }
-  },
-  {
-    id: 'atherton',
-    name: 'Atherton',
-    code: 'ATHERTON',
-    coordinates: { lat: 37.4631, lng: -122.1978 }
   },
   {
     id: 'mp',

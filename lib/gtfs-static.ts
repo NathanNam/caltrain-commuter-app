@@ -295,7 +295,6 @@ function findGTFSStopId(stationCode: string, directionId: string): string {
     'SB': '7005',   // San Bruno
     'MB': '7006',   // Millbrae
     'MILLBRAE': '7006',
-    'BROADWAY': '7007',  // Broadway (Burlingame)
     'BURLINGAME': '7008',
     'SM': '7009',   // San Mateo
     'HAYWARD': '7010',  // Hayward Park
@@ -317,7 +316,9 @@ function findGTFSStopId(stationCode: string, directionId: string): string {
     'MOUNTAIN VIEW': '7021',
     'SUNNYVALE': '7022',
     'LAWRENCE': '7023',
+    'SANTACLARA': '7024',
     'SANTA CLARA': '7024',
+    'COLLEGEPARK': '7025',
     'COLLEGE PARK': '7025',
     'SJ': '7026',   // San Jose Diridon
     'DIRIDON': '7026',
