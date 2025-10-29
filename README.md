@@ -172,10 +172,6 @@ WEATHER_API_KEY=your_openweathermap_api_key_here
 
 # Ticketmaster - For event crowding alerts
 TICKETMASTER_API_KEY=your_consumer_key_here
-
-# OpenTelemetry - For observability and monitoring (optional)
-OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318
-OTEL_EXPORTER_OTLP_BEARER_TOKEN=your_observe_token_here
 ```
 
 ### Detailed Setup Instructions
@@ -313,47 +309,6 @@ node scripts/update-moscone-events-auto.mjs
 
 **Why this matters:** Major conventions can bring 100K+ attendees and cause severe crowding at 4th & King and 22nd Street stations during peak commute hours. The app automatically tracks these to help you plan your commute.
 
-## Observability & Monitoring
-
-The application includes comprehensive OpenTelemetry instrumentation for production monitoring and observability.
-
-### Features
-
-- **Distributed Tracing**: Full request tracing across all API endpoints
-- **Structured Logging**: Contextual logs with severity levels and attributes
-- **Metrics Collection**: Performance metrics, response times, and throughput
-- **Error Tracking**: Automatic error capture with stack traces
-- **Health Monitoring**: Application status and dependency health checks
-
-### Configuration
-
-Add these environment variables to enable observability:
-
-```bash
-# OpenTelemetry Configuration
-OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318  # Your OTLP endpoint
-OTEL_EXPORTER_OTLP_BEARER_TOKEN=your_token_here    # Authentication token
-
-# Client-side (browser) configuration
-NEXT_PUBLIC_OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318
-NEXT_PUBLIC_OTEL_EXPORTER_OTLP_BEARER_TOKEN=your_token_here
-```
-
-### Instrumented Components
-
-- **API Routes**: `/api/trains`, `/api/weather`, `/api/alerts`, `/api/events`
-- **External API Calls**: Weather API, GTFS-Realtime, Ticketmaster
-- **Database Operations**: GTFS data parsing and caching
-- **Client-side**: Page loads, fetch requests, user interactions
-
-### Observability Data
-
-**Traces**: Request flows with timing, status codes, and custom attributes
-**Logs**: Structured logs with contextual information and error details
-**Metrics**: Response times, request counts, error rates, and custom business metrics
-
-The instrumentation is non-intrusive and preserves all existing application functionality while providing comprehensive observability for production monitoring.
-
 ## Project Structure
 
 ```
@@ -373,8 +328,7 @@ caltrain-commuter-app-no-instrumentation/
 │   ├── WeatherWidget.tsx        # Weather information
 │   ├── VenueEvents.tsx          # Event crowding alerts
 │   ├── ServiceAlerts.tsx        # Real-time service alerts display
-│   ├── SavedRoutes.tsx          # Saved routes manager
-│   └── OtelClientInit.tsx       # OpenTelemetry client-side initialization
+│   └── SavedRoutes.tsx          # Saved routes manager
 ├── lib/
 │   ├── stations.ts              # All 29 Caltrain stations data (23 active + 6 South County)
 │   ├── types.ts                 # TypeScript interfaces
@@ -396,9 +350,6 @@ caltrain-commuter-app-no-instrumentation/
 │       ├── stop_times.txt       # Actual train times
 │       └── stops.txt            # Station stops
 ├── images/                      # Screenshots
-├── otel-server.ts               # OpenTelemetry server-side configuration
-├── otel-client.ts               # OpenTelemetry client-side configuration
-├── instrumentation.ts           # Next.js instrumentation hook
 └── public/
     └── icons/                   # Weather icons (if needed)
 ```
