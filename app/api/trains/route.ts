@@ -1,45 +1,116 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { trace, context, SpanStatusCode } from '@opentelemetry/api';
+import { SeverityNumber } from '@opentelemetry/api-logs';
 import { Train } from '@/lib/types';
 import { getStationById } from '@/lib/stations';
 import { fetchTripUpdates, getTripDelay } from '@/lib/gtfs-realtime';
 import { getScheduledTrains } from '@/lib/gtfs-static';
 import { parseAlertsFromText, extractTrainDelays, fetchCaltrainAlerts } from '@/lib/caltrain-alerts-scraper';
 import { getAllTrainDelaysFromTwitter } from '@/lib/twitter-alerts-scraper';
+import { logger } from '@/otel-server';
 
 export async function GET(request: NextRequest) {
-  const searchParams = request.nextUrl.searchParams;
-  const origin = searchParams.get('origin');
-  const destination = searchParams.get('destination');
+  const tracer = trace.getTracer('caltrain-commuter-app');
+  const span = tracer.startSpan('trains.get');
 
-  if (!origin || !destination) {
-    return NextResponse.json(
-      { error: 'Origin and destination are required' },
-      { status: 400 }
-    );
-  }
+  try {
+    const searchParams = request.nextUrl.searchParams;
+    const origin = searchParams.get('origin');
+    const destination = searchParams.get('destination');
 
-  // Validate stations exist
-  const originStation = getStationById(origin);
-  const destinationStation = getStationById(destination);
+    // Add span attributes
+    span.setAttributes({
+      'http.method': 'GET',
+      'http.route': '/api/trains',
+      'trains.origin': origin || 'unknown',
+      'trains.destination': destination || 'unknown',
+    });
 
-  if (!originStation || !destinationStation) {
-    return NextResponse.json(
-      { error: 'Invalid station ID' },
-      { status: 400 }
-    );
-  }
+    logger.emit({
+      severityNumber: SeverityNumber.INFO,
+      severityText: "INFO",
+      body: "Train schedule request received",
+      attributes: {
+        origin: origin || 'unknown',
+        destination: destination || 'unknown',
+        userAgent: request.headers.get('user-agent') || 'unknown'
+      },
+    });
 
-  // Fetch real-time trip updates FIRST (before filtering trains by time)
-  // This allows us to filter based on actual departure time (scheduled + delay)
-  const tripUpdates = await fetchTripUpdates();
-  const hasGTFSRealtime = tripUpdates.length > 0;
+    if (!origin || !destination) {
+      span.setStatus({ code: SpanStatusCode.ERROR, message: 'Missing required parameters' });
+      logger.emit({
+        severityNumber: SeverityNumber.WARN,
+        severityText: "WARN",
+        body: "Train request missing required parameters",
+        attributes: { origin: origin || 'null', destination: destination || 'null' },
+      });
+      return NextResponse.json(
+        { error: 'Origin and destination are required' },
+        { status: 400 }
+      );
+    }
 
-  if (hasGTFSRealtime) {
-    console.log(`✓ Fetched ${tripUpdates.length} trip updates from GTFS-Realtime (511.org)`);
-    console.log(`Trip IDs in GTFS-Realtime feed:`, tripUpdates.map(u => u.tripId).join(', '));
-  } else {
-    console.warn('✗ GTFS-Realtime unavailable from 511.org - will use backup delay sources');
-  }
+    // Validate stations exist
+    const originStation = getStationById(origin);
+    const destinationStation = getStationById(destination);
+
+    if (!originStation || !destinationStation) {
+      span.setStatus({ code: SpanStatusCode.ERROR, message: 'Invalid station ID' });
+      logger.emit({
+        severityNumber: SeverityNumber.WARN,
+        severityText: "WARN",
+        body: "Invalid station ID provided",
+        attributes: {
+          origin,
+          destination,
+          originValid: !!originStation,
+          destinationValid: !!destinationStation
+        },
+      });
+      return NextResponse.json(
+        { error: 'Invalid station ID' },
+        { status: 400 }
+      );
+    }
+
+    span.setAttributes({
+      'trains.origin.name': originStation.name,
+      'trains.destination.name': destinationStation.name,
+    });
+
+    // Fetch real-time trip updates FIRST (before filtering trains by time)
+    // This allows us to filter based on actual departure time (scheduled + delay)
+    const tripUpdatesSpan = tracer.startSpan('trains.fetch_trip_updates');
+    const tripUpdates = await fetchTripUpdates();
+    const hasGTFSRealtime = tripUpdates.length > 0;
+    tripUpdatesSpan.setAttributes({
+      'gtfs.trip_updates.count': tripUpdates.length,
+      'gtfs.realtime.available': hasGTFSRealtime,
+    });
+    tripUpdatesSpan.end();
+
+    if (hasGTFSRealtime) {
+      console.log(`✓ Fetched ${tripUpdates.length} trip updates from GTFS-Realtime (511.org)`);
+      console.log(`Trip IDs in GTFS-Realtime feed:`, tripUpdates.map(u => u.tripId).join(', '));
+      logger.emit({
+        severityNumber: SeverityNumber.INFO,
+        severityText: "INFO",
+        body: "GTFS-Realtime data fetched successfully",
+        attributes: {
+          tripUpdatesCount: tripUpdates.length,
+          source: '511.org'
+        },
+      });
+    } else {
+      console.warn('✗ GTFS-Realtime unavailable from 511.org - will use backup delay sources');
+      logger.emit({
+        severityNumber: SeverityNumber.WARN,
+        severityText: "WARN",
+        body: "GTFS-Realtime unavailable, using backup delay sources",
+        attributes: { source: '511.org' },
+      });
+    }
 
   // Fetch Twitter alerts as backup delay source (when GTFS-RT unavailable)
   let twitterDelays = new Map<string, number>();
@@ -218,19 +289,65 @@ export async function GET(request: NextRequest) {
     }
   }
 
-  return NextResponse.json({
-    trains,
-    isMockData: !hasAnyDelaySource, // Flag to indicate mock delay data
-    isMockSchedule: usingMockSchedule, // Flag to indicate mock schedule data
-    delaySource: hasGTFSRealtime ? 'gtfs-rt' :
-                 twitterDelays.size > 0 ? 'twitter' :
-                 caltrainAlerts.size > 0 ? 'caltrain-alerts' :
-                 'none'
-  }, {
-    headers: {
-      'Cache-Control': 'public, s-maxage=30, stale-while-revalidate=60'
-    }
-  });
+    const delaySource = hasGTFSRealtime ? 'gtfs-rt' :
+                     twitterDelays.size > 0 ? 'twitter' :
+                     caltrainAlerts.size > 0 ? 'caltrain-alerts' :
+                     'none';
+
+    // Set final span attributes
+    span.setAttributes({
+      'trains.count': trains.length,
+      'trains.delay_source': delaySource,
+      'trains.mock_data': !hasAnyDelaySource,
+      'trains.mock_schedule': usingMockSchedule,
+    });
+
+    span.setStatus({ code: SpanStatusCode.OK });
+
+    logger.emit({
+      severityNumber: SeverityNumber.INFO,
+      severityText: "INFO",
+      body: "Train schedule request completed successfully",
+      attributes: {
+        origin,
+        destination,
+        trainsCount: trains.length,
+        delaySource,
+        isMockData: !hasAnyDelaySource,
+        isMockSchedule: usingMockSchedule
+      },
+    });
+
+    return NextResponse.json({
+      trains,
+      isMockData: !hasAnyDelaySource, // Flag to indicate mock delay data
+      isMockSchedule: usingMockSchedule, // Flag to indicate mock schedule data
+      delaySource
+    }, {
+      headers: {
+        'Cache-Control': 'public, s-maxage=30, stale-while-revalidate=60'
+      }
+    });
+
+  } catch (error) {
+    span.setStatus({ code: SpanStatusCode.ERROR, message: (error as Error).message });
+    logger.emit({
+      severityNumber: SeverityNumber.ERROR,
+      severityText: "ERROR",
+      body: "Error processing train schedule request",
+      attributes: {
+        error: (error as Error).message,
+        stack: (error as Error).stack
+      },
+    });
+
+    return NextResponse.json(
+      { error: 'Internal server error' },
+      { status: 500 }
+    );
+  } finally {
+    span.end();
+  }
 }
 
 // Mock train data generator with weekday/weekend/holiday awareness
