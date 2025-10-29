@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
 import './globals.css'
+import { OtelClientInit } from '@/components/OtelClientInit'
 
 export const metadata: Metadata = {
   title: 'Caltrain Commuter - Train Schedules & Weather',
@@ -15,6 +16,7 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className="bg-gray-50 antialiased">
+        <OtelClientInit />
         <header className="shadow-lg" style={{ backgroundColor: '#E31837' }}>
           <div className="container mx-auto px-4 py-4">
             <h1 className="text-2xl md:text-3xl font-bold text-white">
