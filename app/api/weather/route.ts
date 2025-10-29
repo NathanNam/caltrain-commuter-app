@@ -1,91 +1,34 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { trace, SpanStatusCode } from '@opentelemetry/api';
-import { SeverityNumber } from '@opentelemetry/api-logs';
 import { WeatherData } from '@/lib/types';
 import { getStationById } from '@/lib/stations';
 import { celsiusToFahrenheit, mpsToMph } from '@/lib/utils';
-import { logger } from '@/otel-server';
 
 export async function GET(request: NextRequest) {
-  const tracer = trace.getTracer('caltrain-commuter-app');
-  const span = tracer.startSpan('weather.get');
-
   const searchParams = request.nextUrl.searchParams;
   const stationId = searchParams.get('station');
 
+  if (!stationId) {
+    return NextResponse.json(
+      { error: 'Station ID is required' },
+      { status: 400 }
+    );
+  }
+
+  const station = getStationById(stationId);
+  if (!station) {
+    return NextResponse.json(
+      { error: 'Invalid station ID' },
+      { status: 400 }
+    );
+  }
+
   try {
-
-    span.setAttributes({
-      'http.method': 'GET',
-      'http.route': '/api/weather',
-      'weather.station_id': stationId || 'unknown',
-    });
-
-    logger.emit({
-      severityNumber: SeverityNumber.INFO,
-      severityText: "INFO",
-      body: "Weather request received",
-      attributes: {
-        stationId: stationId || 'unknown',
-        userAgent: request.headers.get('user-agent') || 'unknown'
-      },
-    });
-
-    if (!stationId) {
-      span.setStatus({ code: SpanStatusCode.ERROR, message: 'Station ID is required' });
-      logger.emit({
-        severityNumber: SeverityNumber.WARN,
-        severityText: "WARN",
-        body: "Weather request missing station ID",
-      });
-      return NextResponse.json(
-        { error: 'Station ID is required' },
-        { status: 400 }
-      );
-    }
-
-    const station = getStationById(stationId);
-    if (!station) {
-      span.setStatus({ code: SpanStatusCode.ERROR, message: 'Invalid station ID' });
-      logger.emit({
-        severityNumber: SeverityNumber.WARN,
-        severityText: "WARN",
-        body: "Invalid station ID provided for weather",
-        attributes: { stationId },
-      });
-      return NextResponse.json(
-        { error: 'Invalid station ID' },
-        { status: 400 }
-      );
-    }
-
-    span.setAttributes({
-      'weather.station_name': station.name,
-      'weather.coordinates.lat': station.coordinates.lat,
-      'weather.coordinates.lng': station.coordinates.lng,
-    });
-
     // Check if API key is configured
     if (!process.env.WEATHER_API_KEY) {
       console.log('Using mock weather data - configure WEATHER_API_KEY for real weather');
-      span.setAttributes({
-        'weather.data_source': 'mock',
-        'weather.api_key_configured': false,
-      });
-      logger.emit({
-        severityNumber: SeverityNumber.INFO,
-        severityText: "INFO",
-        body: "Using mock weather data - API key not configured",
-        attributes: { stationId, stationName: station.name },
-      });
-
-      const mockWeather = generateMockWeather(station.coordinates.lat);
-      span.setStatus({ code: SpanStatusCode.OK });
-      span.end();
-
       return NextResponse.json(
         {
-          ...mockWeather,
+          ...generateMockWeather(station.coordinates.lat),
           isMockData: true
         },
         {
@@ -100,37 +43,16 @@ export async function GET(request: NextRequest) {
     const apiKey = process.env.WEATHER_API_KEY;
     const { lat, lng } = station.coordinates;
 
-    span.setAttributes({
-      'weather.data_source': 'openweathermap',
-      'weather.api_key_configured': true,
-    });
-
-    const weatherSpan = tracer.startSpan('weather.fetch_openweathermap');
-    weatherSpan.setAttributes({
-      'weather.api.provider': 'openweathermap',
-      'weather.api.lat': lat,
-      'weather.api.lng': lng,
-    });
-
     const response = await fetch(
       `https://api.openweathermap.org/data/2.5/weather?lat=${lat}&lon=${lng}&appid=${apiKey}&units=metric`,
       { next: { revalidate: 600 } } // Cache for 10 minutes
     );
 
-    weatherSpan.setAttributes({
-      'weather.api.response.status': response.status,
-      'weather.api.response.ok': response.ok,
-    });
-
     if (!response.ok) {
-      weatherSpan.setStatus({ code: SpanStatusCode.ERROR, message: `Weather API returned ${response.status}` });
-      weatherSpan.end();
       throw new Error(`Weather API returned ${response.status}`);
     }
 
     const data = await response.json();
-    weatherSpan.setStatus({ code: SpanStatusCode.OK });
-    weatherSpan.end();
 
     const weatherData: WeatherData = {
       temperature: celsiusToFahrenheit(data.main.temp),
@@ -139,26 +61,6 @@ export async function GET(request: NextRequest) {
       windSpeed: mpsToMph(data.wind.speed),
       humidity: data.main.humidity
     };
-
-    span.setAttributes({
-      'weather.temperature': weatherData.temperature,
-      'weather.description': weatherData.description,
-      'weather.humidity': weatherData.humidity,
-    });
-
-    span.setStatus({ code: SpanStatusCode.OK });
-    logger.emit({
-      severityNumber: SeverityNumber.INFO,
-      severityText: "INFO",
-      body: "Weather data fetched successfully",
-      attributes: {
-        stationId,
-        stationName: station.name,
-        temperature: weatherData.temperature,
-        description: weatherData.description,
-        source: 'openweathermap'
-      },
-    });
 
     return NextResponse.json({
       ...weatherData,
@@ -171,29 +73,10 @@ export async function GET(request: NextRequest) {
 
   } catch (error) {
     console.error('Weather API error:', error);
-    span.setStatus({ code: SpanStatusCode.ERROR, message: (error as Error).message });
-    logger.emit({
-      severityNumber: SeverityNumber.ERROR,
-      severityText: "ERROR",
-      body: "Weather API error, falling back to mock data",
-      attributes: {
-        error: (error as Error).message,
-        stationId: stationId || 'unknown',
-        fallback: 'mock_data'
-      },
-    });
-
-    // Return mock data as fallback - need to get station again since it's in try block
-    const station = getStationById(stationId!);
-    const mockWeather = generateMockWeather(station?.coordinates.lat || 37.7749);
-    span.setAttributes({
-      'weather.data_source': 'mock_fallback',
-      'weather.error': (error as Error).message,
-    });
-
+    // Return mock data as fallback
     return NextResponse.json(
       {
-        ...mockWeather,
+        ...generateMockWeather(station.coordinates.lat),
         isMockData: true
       },
       {
@@ -202,8 +85,6 @@ export async function GET(request: NextRequest) {
         }
       }
     );
-  } finally {
-    span.end();
   }
 }
 

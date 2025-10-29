@@ -1,6 +1,4 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { trace, SpanStatusCode } from '@opentelemetry/api';
-import { SeverityNumber } from '@opentelemetry/api-logs';
 import { VenueEvent } from '@/lib/types';
 import { ticketmasterVenueIds } from '@/lib/venues';
 import { getMosconeEventsForDate as getMosconeEventsRuntime } from '@/lib/moscone-events-fetcher';
@@ -10,7 +8,6 @@ import { getValkyriesGamesForDate } from '@/lib/wnba-schedule';
 import { getGiantsGamesForDate } from '@/lib/mlb-schedule';
 import { get49ersGamesForDate } from '@/lib/nfl-schedule';
 import { getSharksGamesForDate } from '@/lib/nhl-schedule';
-import { logger } from '@/otel-server';
 
 // This API fetches events from multiple venues near Caltrain stations
 // Supports: Oracle Park, Chase Center, Bill Graham, The Fillmore, SAP Center, Levi's Stadium, and more
@@ -22,42 +19,22 @@ import { logger } from '@/otel-server';
 // 4. Manual lists (chase-center-events.ts) - fallback for missing data
 
 export async function GET(request: NextRequest) {
-  const tracer = trace.getTracer('caltrain-commuter-app');
-  const span = tracer.startSpan('events.get');
+  const searchParams = request.nextUrl.searchParams;
 
-  try {
-    const searchParams = request.nextUrl.searchParams;
-
-    // Get date parameter or use current Pacific Time date
-    let dateStr = searchParams.get('date');
-    if (!dateStr) {
-      // Get current date in Pacific Time
-      const now = new Date();
-      const pacificDateStr = now.toLocaleString('en-US', {
-        timeZone: 'America/Los_Angeles',
-        year: 'numeric',
-        month: '2-digit',
-        day: '2-digit'
-      }).split(',')[0]; // MM/DD/YYYY
-      const [month, day, year] = pacificDateStr.split('/');
-      dateStr = `${year}-${month}-${day}`; // YYYY-MM-DD
-    }
-
-    span.setAttributes({
-      'http.method': 'GET',
-      'http.route': '/api/events',
-      'events.date': dateStr,
-    });
-
-    logger.emit({
-      severityNumber: SeverityNumber.INFO,
-      severityText: "INFO",
-      body: "Events request received",
-      attributes: {
-        date: dateStr,
-        userAgent: request.headers.get('user-agent') || 'unknown'
-      },
-    });
+  // Get date parameter or use current Pacific Time date
+  let dateStr = searchParams.get('date');
+  if (!dateStr) {
+    // Get current date in Pacific Time
+    const now = new Date();
+    const pacificDateStr = now.toLocaleString('en-US', {
+      timeZone: 'America/Los_Angeles',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit'
+    }).split(',')[0]; // MM/DD/YYYY
+    const [month, day, year] = pacificDateStr.split('/');
+    dateStr = `${year}-${month}-${day}`; // YYYY-MM-DD
+  }
 
   // Parse date as Pacific Time (not UTC) by appending Pacific timezone offset
   // This ensures "2025-10-18" means Oct 18 PDT, not Oct 17 at 5pm PDT
@@ -153,51 +130,14 @@ export async function GET(request: NextRequest) {
     }
   }
 
-    span.setAttributes({
-      'events.count': allEvents.length,
-      'events.mock_data': false,
-    });
-
-    span.setStatus({ code: SpanStatusCode.OK });
-    logger.emit({
-      severityNumber: SeverityNumber.INFO,
-      severityText: "INFO",
-      body: "Events request completed successfully",
-      attributes: {
-        date: dateStr,
-        eventsCount: allEvents.length,
-        sources: 'sports_apis,moscone,chase_center'
-      },
-    });
-
-    return NextResponse.json({
-      events: allEvents,
-      isMockData: false
-    }, {
-      headers: {
-        'Cache-Control': 'public, s-maxage=1800, stale-while-revalidate=3600' // Cache for 30 min
-      }
-    });
-
-  } catch (error) {
-    span.setStatus({ code: SpanStatusCode.ERROR, message: (error as Error).message });
-    logger.emit({
-      severityNumber: SeverityNumber.ERROR,
-      severityText: "ERROR",
-      body: "Error processing events request",
-      attributes: {
-        error: (error as Error).message,
-        stack: (error as Error).stack
-      },
-    });
-
-    return NextResponse.json(
-      { error: 'Internal server error' },
-      { status: 500 }
-    );
-  } finally {
-    span.end();
-  }
+  return NextResponse.json({
+    events: allEvents,
+    isMockData: false
+  }, {
+    headers: {
+      'Cache-Control': 'public, s-maxage=1800, stale-while-revalidate=3600' // Cache for 30 min
+    }
+  });
 }
 
 // Mock event generator - generates sample events for demonstration
