@@ -205,7 +205,12 @@ export async function fetchMosconeEvents(): Promise<MosconeEvent[]> {
 
   try {
     console.log('Fetching fresh Moscone events from SF Travel...');
-    const response = await fetch(SF_TRAVEL_URL);
+    const response = await fetch(SF_TRAVEL_URL, {
+      signal: AbortSignal.timeout(2000), // 2 second timeout for scraping
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (compatible; CaltrainApp/1.0)'
+      }
+    });
 
     if (!response.ok) {
       throw new Error(`HTTP ${response.status}: ${response.statusText}`);

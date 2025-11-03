@@ -19,6 +19,9 @@ import { getSharksGamesForDate } from '@/lib/nhl-schedule';
 // 4. Manual lists (chase-center-events.ts) - fallback for missing data
 
 export async function GET(request: NextRequest) {
+  const startTime = performance.now();
+  console.time('Events API');
+
   const searchParams = request.nextUrl.searchParams;
 
   // Get date parameter or use current Pacific Time date
@@ -40,7 +43,28 @@ export async function GET(request: NextRequest) {
   // This ensures "2025-10-18" means Oct 18 PDT, not Oct 17 at 5pm PDT
   const dateObj = new Date(dateStr + 'T12:00:00-07:00'); // Noon Pacific Time
 
-  // Fetch all events in parallel from all sources
+  // Helper function to add timeout to promises
+  const withTimeout = <T>(promise: Promise<T>, timeoutMs: number = 300): Promise<T> => {
+    return Promise.race([
+      promise,
+      new Promise<T>((_, reject) =>
+        setTimeout(() => reject(new Error(`Timeout after ${timeoutMs}ms`)), timeoutMs)
+      )
+    ]);
+  };
+
+  // Fetch all events in parallel from all sources with timeout and graceful error handling
+  const results = await Promise.allSettled([
+    withTimeout(getWarriorsGamesForDate(dateObj)),
+    withTimeout(getValkyriesGamesForDate(dateObj)),
+    withTimeout(getGiantsGamesForDate(dateObj)),
+    withTimeout(get49ersGamesForDate(dateObj)),
+    withTimeout(getSharksGamesForDate(dateObj)),
+    withTimeout(getMosconeEventsRuntime(dateObj), 1000), // Longer timeout for Moscone scraping
+    Promise.resolve(getChaseCenterEventsForDate(dateObj))
+  ]);
+
+  // Extract successful results, log failures
   const [
     warriorsGames,
     valkyriesGames,
@@ -49,15 +73,15 @@ export async function GET(request: NextRequest) {
     sharksGames,
     mosconeEvents,
     chaseCenterEvents
-  ] = await Promise.all([
-    getWarriorsGamesForDate(dateObj),
-    getValkyriesGamesForDate(dateObj),
-    getGiantsGamesForDate(dateObj),
-    get49ersGamesForDate(dateObj),
-    getSharksGamesForDate(dateObj),
-    getMosconeEventsRuntime(dateObj),
-    Promise.resolve(getChaseCenterEventsForDate(dateObj))
-  ]);
+  ] = results.map((result, index) => {
+    const sources = ['Warriors', 'Valkyries', 'Giants', '49ers', 'Sharks', 'Moscone', 'Chase Center'];
+    if (result.status === 'fulfilled') {
+      return result.value;
+    } else {
+      console.warn(`${sources[index]} events failed:`, result.reason?.message || result.reason);
+      return []; // Return empty array for failed sources
+    }
+  });
 
   // Combine all events from sports APIs first (highest priority)
   const allEvents: VenueEvent[] = [
@@ -104,12 +128,19 @@ export async function GET(request: NextRequest) {
         }
       }
 
+      const endTime = performance.now();
+      const duration = endTime - startTime;
+      console.timeEnd('Events API');
+      if (duration > 100) {
+        console.warn(`Slow Events API operation: took ${duration.toFixed(2)}ms`);
+      }
+
       return NextResponse.json({
         events: allEvents,
         isMockData: false
       }, {
         headers: {
-          'Cache-Control': 'public, s-maxage=1800, stale-while-revalidate=3600' // Cache for 30 min
+          'Cache-Control': 'public, s-maxage=14400, stale-while-revalidate=7200' // Cache for 4 hours
         }
       });
     } catch (error) {
@@ -130,12 +161,19 @@ export async function GET(request: NextRequest) {
     }
   }
 
+  const endTime = performance.now();
+  const duration = endTime - startTime;
+  console.timeEnd('Events API');
+  if (duration > 100) {
+    console.warn(`Slow Events API operation: took ${duration.toFixed(2)}ms`);
+  }
+
   return NextResponse.json({
     events: allEvents,
     isMockData: false
   }, {
     headers: {
-      'Cache-Control': 'public, s-maxage=1800, stale-while-revalidate=3600' // Cache for 30 min
+      'Cache-Control': 'public, s-maxage=14400, stale-while-revalidate=7200' // Cache for 4 hours
     }
   });
 }
@@ -219,18 +257,29 @@ async function fetchTicketmasterEvents(date: string): Promise<VenueEvent[]> {
   const venueIds = Object.values(ticketmasterVenueIds);
 
   try {
-    // Fetch events for all venues (you can parallelize this for better performance)
-    const promises = venueIds.map(venueId =>
-      fetch(
+    // Fetch events for all venues with timeout handling
+    const promises = venueIds.map(venueId => {
+      const fetchPromise = fetch(
         `https://app.ticketmaster.com/discovery/v2/events.json?apikey=${apiKey}&venueId=${venueId}&startDateTime=${date}T00:00:00Z&endDateTime=${date}T23:59:59Z&size=20`,
-        { next: { revalidate: 1800 } }
-      ).then(res => res.ok ? res.json() : null)
-    );
+        {
+          next: { revalidate: 14400 }, // 4 hour cache
+          signal: AbortSignal.timeout(300) // 300ms timeout
+        }
+      ).then(res => res.ok ? res.json() : null);
 
-    const results = await Promise.all(promises);
+      return fetchPromise.catch(error => {
+        console.warn(`Ticketmaster API timeout/error for venue ${venueId}:`, error.message);
+        return null;
+      });
+    });
+
+    const results = await Promise.allSettled(promises);
+    const successfulResults = results
+      .filter(result => result.status === 'fulfilled' && result.value !== null)
+      .map(result => (result as PromiseFulfilledResult<any>).value);
 
     // Process results from all venues
-    for (const result of results) {
+    for (const result of successfulResults) {
       if (!result || !result._embedded?.events) continue;
 
       for (const event of result._embedded.events) {
