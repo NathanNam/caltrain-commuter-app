@@ -78,6 +78,7 @@ This app provides comprehensive real-time information for Caltrain commuters acr
 - **Framework**: Next.js 15 (App Router)
 - **Language**: TypeScript
 - **Styling**: Tailwind CSS v4
+- **Observability**: OpenTelemetry (traces, metrics, logs)
 - **APIs**:
   - **Delay Data (triple-redundant)**:
     - 511.org Transit API (GTFS-Realtime - primary source)
@@ -119,7 +120,7 @@ npm install
 
 3. Set up environment variables (optional for real data):
 ```bash
-cp .env.local.example .env.local
+cp .env.example .env.local
 ```
 
 Edit `.env.local` and add your API keys:
@@ -132,6 +133,12 @@ WEATHER_API_KEY=your_openweathermap_api_key_here
 
 # Event crowding alerts (optional - but recommended!)
 TICKETMASTER_API_KEY=your_consumer_key_here
+
+# OpenTelemetry observability (optional)
+OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318
+OTEL_EXPORTER_OTLP_BEARER_TOKEN=your_token_here
+NEXT_PUBLIC_OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318
+NEXT_PUBLIC_OTEL_EXPORTER_OTLP_BEARER_TOKEN=your_token_here
 ```
 
 4. Run the development server:
@@ -140,6 +147,18 @@ npm run dev
 ```
 
 5. Open [http://localhost:3000](http://localhost:3000) in your browser
+
+## Observability & Monitoring
+
+This application includes comprehensive observability instrumentation using OpenTelemetry:
+
+- **📊 Distributed Tracing**: Automatic instrumentation of HTTP requests, API calls, and database operations
+- **📈 Metrics Collection**: Performance metrics for key application indicators
+- **📝 Structured Logging**: Centralized logging with trace correlation
+- **🚨 Error Tracking**: Automatic error capture and monitoring
+- **🌐 Full-Stack Monitoring**: Both browser and server-side telemetry
+
+**Configuration**: Set `OTEL_EXPORTER_OTLP_ENDPOINT` and related environment variables to send telemetry data to your observability platform. See [OBSERVABILITY.md](OBSERVABILITY.md) for detailed setup instructions.
 
 ## Real-Time Data Status
 
