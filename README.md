@@ -124,12 +124,6 @@ cp .env.local.example .env.local
 
 Edit `.env.local` and add your API keys:
 ```
-# OpenTelemetry Observability (optional - for monitoring)
-OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318
-OTEL_EXPORTER_OTLP_BEARER_TOKEN=your_observe_api_token_here
-NEXT_PUBLIC_OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318
-NEXT_PUBLIC_OTEL_EXPORTER_OTLP_BEARER_TOKEN=your_observe_api_token_here
-
 # Transit data (optional)
 TRANSIT_API_KEY=your_511_api_key_here
 
@@ -156,7 +150,6 @@ npm run dev
 | **Service Alerts** | Ready for real-time | 511.org API | `TRANSIT_API_KEY` |
 | **Weather** | Ready for real-time | OpenWeatherMap | `WEATHER_API_KEY` |
 | **Event Crowding** | Ready for real-time | Ticketmaster API | `TICKETMASTER_API_KEY` |
-| **Observability** | ✅ Fully instrumented | OpenTelemetry + Observe | `OTEL_EXPORTER_OTLP_BEARER_TOKEN` |
 
 **The app uses REAL Caltrain schedules out of the box!**
 
@@ -315,55 +308,6 @@ node scripts/update-moscone-events-auto.mjs
 - And ~15+ more events automatically
 
 **Why this matters:** Major conventions can bring 100K+ attendees and cause severe crowding at 4th & King and 22nd Street stations during peak commute hours. The app automatically tracks these to help you plan your commute.
-
-## Observability & Monitoring
-
-The application includes comprehensive OpenTelemetry instrumentation for production monitoring and observability:
-
-### Features
-
-- **📊 Distributed Tracing**: Automatic tracing of HTTP requests, API calls, and database operations
-- **📈 Metrics Collection**: Performance metrics including response times, throughput, and resource usage
-- **📝 Structured Logging**: Centralized logging with trace correlation and structured data
-- **🔍 Error Tracking**: Automatic error capture and exception monitoring
-- **⚡ Performance Monitoring**: Real-time application performance insights
-- **🌐 Client & Server Telemetry**: Full-stack observability for both browser and server
-
-### Configuration
-
-Add these environment variables to your `.env.local` file to enable observability:
-
-```bash
-# OpenTelemetry Configuration
-OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318
-OTEL_EXPORTER_OTLP_BEARER_TOKEN=your_observe_api_token_here
-
-# Client-side telemetry (browser)
-NEXT_PUBLIC_OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318
-NEXT_PUBLIC_OTEL_EXPORTER_OTLP_BEARER_TOKEN=your_observe_api_token_here
-```
-
-### Integration with Observe
-
-The application is pre-configured to work with [Observe](https://observeinc.com/):
-
-1. **Set up your Observe account** and get your OTLP endpoint and API token
-2. **Configure environment variables** with your Observe credentials
-3. **Deploy the application** - telemetry data will automatically flow to Observe
-4. **Monitor your application** using Observe's dashboards and alerting
-
-### Local Development
-
-For local development, you can run an OpenTelemetry collector or use Observe's development environment. The application gracefully handles missing configuration and continues to function normally without telemetry.
-
-### What's Instrumented
-
-- **HTTP Requests**: All incoming and outgoing HTTP requests
-- **API Routes**: Train schedules, weather, events, and alerts endpoints
-- **Database Operations**: GTFS data queries and processing
-- **External API Calls**: 511.org, OpenWeatherMap, Ticketmaster integrations
-- **Client-side Actions**: Page loads, user interactions, fetch requests
-- **Error Conditions**: Automatic error capture with full context
 
 ## Project Structure
 
