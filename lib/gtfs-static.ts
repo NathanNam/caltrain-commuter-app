@@ -42,21 +42,83 @@ interface GTFSCalendarDate {
   exception_type: string; // 1 = service added, 2 = service removed
 }
 
+// Performance indexes for O(1) lookups
+interface GTFSIndexes {
+  stopTimesByTrip: Map<string, GTFSStopTime[]>; // trip_id -> stop times for that trip
+  tripsByService: Map<string, GTFSTrip[]>; // service_id -> trips for that service
+  tripStopsCount: Map<string, number>; // trip_id -> number of stops
+  stopTimesByTripAndStop: Map<string, GTFSStopTime>; // "trip_id:stop_id" -> stop time
+}
+
 let gtfsCache: {
   stopTimes: GTFSStopTime[];
   trips: GTFSTrip[];
   calendar: GTFSCalendar[];
   calendarDates: GTFSCalendarDate[];
   lastFetch: Date | null;
+  indexes: GTFSIndexes;
 } = {
   stopTimes: [],
   trips: [],
   calendar: [],
   calendarDates: [],
   lastFetch: null,
+  indexes: {
+    stopTimesByTrip: new Map(),
+    tripsByService: new Map(),
+    tripStopsCount: new Map(),
+    stopTimesByTripAndStop: new Map(),
+  },
 };
 
 const CACHE_DURATION_HOURS = 24; // Cache GTFS data for 24 hours
+
+/**
+ * Build performance indexes for O(1) lookups
+ * This eliminates the N+1 query pattern that searches through 50,000+ records for each trip
+ */
+function buildGTFSIndexes(): void {
+  console.time('Building GTFS indexes');
+
+  // Clear existing indexes
+  gtfsCache.indexes.stopTimesByTrip.clear();
+  gtfsCache.indexes.tripsByService.clear();
+  gtfsCache.indexes.tripStopsCount.clear();
+  gtfsCache.indexes.stopTimesByTripAndStop.clear();
+
+  // Index stop times by trip_id for O(1) lookup
+  for (const stopTime of gtfsCache.stopTimes) {
+    const tripId = stopTime.trip_id;
+
+    // Group stop times by trip
+    if (!gtfsCache.indexes.stopTimesByTrip.has(tripId)) {
+      gtfsCache.indexes.stopTimesByTrip.set(tripId, []);
+    }
+    gtfsCache.indexes.stopTimesByTrip.get(tripId)!.push(stopTime);
+
+    // Index by trip_id:stop_id for direct lookup
+    const key = `${tripId}:${stopTime.stop_id}`;
+    gtfsCache.indexes.stopTimesByTripAndStop.set(key, stopTime);
+  }
+
+  // Pre-compute stop counts per trip
+  for (const [tripId, stopTimes] of gtfsCache.indexes.stopTimesByTrip) {
+    gtfsCache.indexes.tripStopsCount.set(tripId, stopTimes.length);
+  }
+
+  // Index trips by service_id for O(1) lookup
+  for (const trip of gtfsCache.trips) {
+    const serviceId = trip.service_id;
+    if (!gtfsCache.indexes.tripsByService.has(serviceId)) {
+      gtfsCache.indexes.tripsByService.set(serviceId, []);
+    }
+    gtfsCache.indexes.tripsByService.get(serviceId)!.push(trip);
+  }
+
+  console.timeEnd('Building GTFS indexes');
+  console.log(`Indexed ${gtfsCache.stopTimes.length} stop times, ${gtfsCache.trips.length} trips`);
+  console.log(`Created ${gtfsCache.indexes.stopTimesByTrip.size} trip indexes, ${gtfsCache.indexes.tripsByService.size} service indexes`);
+}
 
 /**
  * Get the current date/time in Pacific Time
@@ -208,6 +270,9 @@ async function loadLocalGTFSData(): Promise<boolean> {
 
     gtfsCache.lastFetch = new Date();
 
+    // Build performance indexes for O(1) lookups
+    buildGTFSIndexes();
+
     console.log(`GTFS data loaded from local files: ${gtfsCache.stopTimes.length} stop times, ${gtfsCache.trips.length} trips`);
     return true;
   } catch (error) {
@@ -269,6 +334,9 @@ async function fetchGTFSData(): Promise<boolean> {
         : [];
 
       gtfsCache.lastFetch = new Date();
+
+      // Build performance indexes for O(1) lookups
+      buildGTFSIndexes();
 
       console.log(`GTFS data loaded from remote: ${gtfsCache.stopTimes.length} stop times, ${gtfsCache.trips.length} trips`);
       return true;
@@ -357,6 +425,8 @@ export async function getScheduledTrains(
   tripUpdates: TripUpdate[] = [],
   caltrainAlerts: Map<string, TrainDelay> = new Map()
 ): Promise<Train[]> {
+  const startTime = performance.now();
+  console.time('getScheduledTrains');
   console.log(`getScheduledTrains called: ${originStationId} -> ${destinationStationId}`);
 
   // Ensure GTFS data is loaded
@@ -385,8 +455,8 @@ export async function getScheduledTrains(
 
   console.log(`Active service ID: ${serviceId} for date ${date.toLocaleDateString()}`);
 
-  // Get all trips for this service
-  const activeTrips = gtfsCache.trips.filter((trip) => trip.service_id === serviceId);
+  // Get all trips for this service using indexed lookup (O(1) instead of O(n))
+  const activeTrips = gtfsCache.indexes.tripsByService.get(serviceId) || [];
   console.log(`Found ${activeTrips.length} active trips for service ${serviceId}`);
 
   // Determine direction based on actual station geographic order
@@ -417,13 +487,9 @@ export async function getScheduledTrains(
     for (const trip of activeTrips) {
       if (trip.direction_id !== directionId) continue;
 
-    // Find stop times for this trip at origin and destination
-    const originStop = gtfsCache.stopTimes.find(
-      (st) => st.trip_id === trip.trip_id && st.stop_id === originStopId
-    );
-    const destStop = gtfsCache.stopTimes.find(
-      (st) => st.trip_id === trip.trip_id && st.stop_id === destStopId
-    );
+    // Find stop times for this trip at origin and destination using indexed lookup (O(1) instead of O(n))
+    const originStop = gtfsCache.indexes.stopTimesByTripAndStop.get(`${trip.trip_id}:${originStopId}`);
+    const destStop = gtfsCache.indexes.stopTimesByTripAndStop.get(`${trip.trip_id}:${destStopId}`);
 
     if (!originStop || !destStop) continue;
 
@@ -546,10 +612,8 @@ export async function getScheduledTrains(
     const durationMinutes = Math.round((arrivalDate.getTime() - departureDate.getTime()) / 60000);
 
     // Determine train type (Local, Limited, Express) based on number of stops
-    // Count how many stops this trip makes
-    const tripStopCount = gtfsCache.stopTimes.filter(
-      (st) => st.trip_id === trip.trip_id
-    ).length;
+    // Get pre-computed stop count using indexed lookup (O(1) instead of O(n))
+    const tripStopCount = gtfsCache.indexes.tripStopsCount.get(trip.trip_id) || 0;
 
     // Classify based on stop count:
     // Local: 20+ stops (stops at most/all stations)
@@ -582,7 +646,18 @@ export async function getScheduledTrains(
   console.log(`Found ${trains.length} future trains, sorting and limiting to 5`);
 
   // Sort all trains by departure time and return the next 5
-  return trains
+  const result = trains
     .sort((a, b) => new Date(a.departureTime).getTime() - new Date(b.departureTime).getTime())
     .slice(0, 5);
+
+  console.timeEnd('getScheduledTrains');
+
+  // Log slow operations for future optimization
+  const endTime = performance.now();
+  const duration = endTime - startTime;
+  if (duration > 100) {
+    console.warn(`Slow GTFS operation: getScheduledTrains took ${duration.toFixed(2)}ms`);
+  }
+
+  return result;
 }
