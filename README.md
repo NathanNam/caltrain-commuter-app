@@ -150,6 +150,7 @@ npm run dev
 | **Service Alerts** | Ready for real-time | 511.org API | `TRANSIT_API_KEY` |
 | **Weather** | Ready for real-time | OpenWeatherMap | `WEATHER_API_KEY` |
 | **Event Crowding** | Ready for real-time | Ticketmaster API | `TICKETMASTER_API_KEY` |
+| **Observability** | ✅ OpenTelemetry instrumentation | Traces, metrics, logs | Optional (see [OBSERVABILITY.md](OBSERVABILITY.md)) |
 
 **The app uses REAL Caltrain schedules out of the box!**
 
@@ -172,6 +173,12 @@ WEATHER_API_KEY=your_openweathermap_api_key_here
 
 # Ticketmaster - For event crowding alerts
 TICKETMASTER_API_KEY=your_consumer_key_here
+
+# Observability (optional) - For monitoring and tracing
+OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318
+OTEL_EXPORTER_OTLP_BEARER_TOKEN=your_token_here
+NEXT_PUBLIC_OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318
+NEXT_PUBLIC_OTEL_EXPORTER_OTLP_BEARER_TOKEN=your_token_here
 ```
 
 ### Detailed Setup Instructions
@@ -309,6 +316,18 @@ node scripts/update-moscone-events-auto.mjs
 
 **Why this matters:** Major conventions can bring 100K+ attendees and cause severe crowding at 4th & King and 22nd Street stations during peak commute hours. The app automatically tracks these to help you plan your commute.
 
+## Observability
+
+This application includes comprehensive OpenTelemetry instrumentation for monitoring and observability:
+
+- **Distributed Tracing**: Automatic instrumentation of API calls, database queries, and external services
+- **Metrics Collection**: Performance metrics and application health indicators
+- **Structured Logging**: Centralized logging with trace correlation
+- **Client-Side Monitoring**: Browser performance and user interaction tracking
+- **Error Tracking**: Automatic error capture and reporting
+
+See [OBSERVABILITY.md](OBSERVABILITY.md) for detailed configuration instructions.
+
 ## Project Structure
 
 ```
@@ -323,6 +342,8 @@ caltrain-commuter-app-no-instrumentation/
 │   ├── page.tsx                 # Main dashboard page
 │   └── globals.css              # Global styles
 ├── components/
+│   ├── providers/
+│   │   └── OtelClientInit.tsx   # OpenTelemetry client-side initialization
 │   ├── StationSelector.tsx      # Origin/destination selector
 │   ├── TrainList.tsx            # Train schedule display with delay indicators
 │   ├── WeatherWidget.tsx        # Weather information
@@ -350,8 +371,13 @@ caltrain-commuter-app-no-instrumentation/
 │       ├── stop_times.txt       # Actual train times
 │       └── stops.txt            # Station stops
 ├── images/                      # Screenshots
-└── public/
-    └── icons/                   # Weather icons (if needed)
+├── public/
+│   └── icons/                   # Weather icons (if needed)
+├── otel-server.ts               # OpenTelemetry server-side configuration
+├── otel-client.ts               # OpenTelemetry client-side configuration
+├── instrumentation.ts           # Next.js instrumentation hook
+├── OBSERVABILITY.md             # Observability setup documentation
+└── package.json                 # Dependencies including OpenTelemetry packages
 ```
 
 ## GTFS Schedule Data
