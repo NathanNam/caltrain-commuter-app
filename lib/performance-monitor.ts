@@ -182,21 +182,21 @@ export function timed(operationName: string) {
     descriptor: TypedPropertyDescriptor<T>
   ) {
     const originalMethod = descriptor.value!;
-    
-    descriptor.value = async function (...args: any[]) {
+
+    descriptor.value = async function (this: any, ...args: any[]) {
       const timerId = `${operationName}-${Date.now()}`;
       performanceMonitor.start(timerId);
-      
+
       try {
         const result = await originalMethod.apply(this, args);
         performanceMonitor.end(timerId, { success: true });
         return result;
-      } catch (error) {
-        performanceMonitor.end(timerId, { success: false, error: error.message });
+      } catch (error: any) {
+        performanceMonitor.end(timerId, { success: false, error: error?.message });
         throw error;
       }
     } as T;
-    
+
     return descriptor;
   };
 }
