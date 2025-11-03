@@ -7,6 +7,9 @@ import { parseAlertsFromText, extractTrainDelays, fetchCaltrainAlerts } from '@/
 import { getAllTrainDelaysFromTwitter } from '@/lib/twitter-alerts-scraper';
 
 export async function GET(request: NextRequest) {
+  const startTime = performance.now();
+  console.time('Trains API');
+
   const searchParams = request.nextUrl.searchParams;
   const origin = searchParams.get('origin');
   const destination = searchParams.get('destination');
@@ -216,6 +219,13 @@ export async function GET(request: NextRequest) {
         train.status = 'cancelled';
       }
     }
+  }
+
+  const endTime = performance.now();
+  const duration = endTime - startTime;
+  console.timeEnd('Trains API');
+  if (duration > 100) {
+    console.warn(`Slow Trains API operation: took ${duration.toFixed(2)}ms`);
   }
 
   return NextResponse.json({
