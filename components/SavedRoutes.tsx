@@ -90,13 +90,13 @@ export default function SavedRoutes({
   const canSaveCurrentRoute = currentOriginId && currentDestinationId && currentOriginId !== currentDestinationId;
 
   return (
-    <div className="bg-white rounded-lg shadow-md p-6">
+    <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
       <div className="flex justify-between items-center mb-4">
-        <h2 className="text-xl font-bold text-gray-800">Saved Routes</h2>
+        <h2 className="text-xl font-bold text-gray-800 dark:text-gray-100">Saved Routes</h2>
         {canSaveCurrentRoute && !showSaveForm && routes.length < MAX_ROUTES && (
           <button
             onClick={() => setShowSaveForm(true)}
-            className="text-sm bg-blue-500 hover:bg-blue-600 text-white px-3 py-1 rounded transition-colors"
+            className="text-sm bg-blue-500 hover:bg-blue-600 dark:bg-blue-600 dark:hover:bg-blue-700 text-white px-3 py-1 rounded transition-colors"
           >
             + Save Current
           </button>
@@ -105,8 +105,8 @@ export default function SavedRoutes({
 
       {/* Save Form */}
       {showSaveForm && canSaveCurrentRoute && (
-        <div className="mb-4 p-4 bg-gray-50 rounded-lg border border-gray-200">
-          <label htmlFor="route-name" className="block text-sm font-medium text-gray-700 mb-2">
+        <div className="mb-4 p-4 bg-gray-50 dark:bg-gray-700 rounded-lg border border-gray-200 dark:border-gray-600">
+          <label htmlFor="route-name" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
             Route Name
           </label>
           <input
@@ -115,14 +115,14 @@ export default function SavedRoutes({
             value={routeName}
             onChange={(e) => setRouteName(e.target.value)}
             placeholder="e.g., Home to Work"
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg mb-2 text-gray-900"
+            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg mb-2 text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-800"
             maxLength={30}
           />
           <div className="flex gap-2">
             <button
               onClick={handleSaveRoute}
               disabled={!routeName.trim()}
-              className="flex-1 bg-green-500 hover:bg-green-600 disabled:bg-gray-300 text-white px-3 py-2 rounded transition-colors text-sm font-medium"
+              className="flex-1 bg-green-500 hover:bg-green-600 disabled:bg-gray-300 dark:disabled:bg-gray-600 text-white px-3 py-2 rounded transition-colors text-sm font-medium"
             >
               {editingId ? 'Update' : 'Save'}
             </button>
@@ -132,7 +132,7 @@ export default function SavedRoutes({
                 setRouteName('');
                 setEditingId(null);
               }}
-              className="flex-1 bg-gray-300 hover:bg-gray-400 text-gray-800 px-3 py-2 rounded transition-colors text-sm font-medium"
+              className="flex-1 bg-gray-300 hover:bg-gray-400 dark:bg-gray-600 dark:hover:bg-gray-500 text-gray-800 dark:text-gray-100 px-3 py-2 rounded transition-colors text-sm font-medium"
             >
               Cancel
             </button>
@@ -142,7 +142,7 @@ export default function SavedRoutes({
 
       {/* Saved Routes List */}
       {routes.length === 0 ? (
-        <p className="text-sm text-gray-500 text-center py-4">
+        <p className="text-sm text-gray-500 dark:text-gray-400 text-center py-4">
           No saved routes yet. Select a route and save it for quick access!
         </p>
       ) : (
@@ -156,17 +156,17 @@ export default function SavedRoutes({
             return (
               <div
                 key={route.id}
-                className="border border-gray-200 rounded-lg p-3 hover:border-blue-300 transition-colors"
+                className="border border-gray-200 dark:border-gray-600 rounded-lg p-3 hover:border-blue-300 dark:hover:border-blue-500 transition-colors"
               >
                 <div className="flex justify-between items-start gap-2">
                   <button
                     onClick={() => onRouteSelect(route.originId, route.destinationId)}
                     className="flex-1 text-left"
                   >
-                    <div className="font-semibold text-gray-800 mb-1">
+                    <div className="font-semibold text-gray-800 dark:text-gray-100 mb-1">
                       {route.name}
                     </div>
-                    <div className="text-sm text-gray-600">
+                    <div className="text-sm text-gray-600 dark:text-gray-300">
                       {origin.name} → {destination.name}
                     </div>
                   </button>
@@ -174,7 +174,7 @@ export default function SavedRoutes({
                   <div className="flex gap-1">
                     <button
                       onClick={() => handleEditRoute(route)}
-                      className="p-1 text-gray-600 hover:text-blue-600 transition-colors"
+                      className="p-1 text-gray-600 dark:text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
                       aria-label="Edit route"
                     >
                       <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -183,7 +183,7 @@ export default function SavedRoutes({
                     </button>
                     <button
                       onClick={() => handleDeleteRoute(route.id)}
-                      className="p-1 text-gray-600 hover:text-red-600 transition-colors"
+                      className="p-1 text-gray-600 dark:text-gray-400 hover:text-red-600 dark:hover:text-red-400 transition-colors"
                       aria-label="Delete route"
                     >
                       <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -199,7 +199,7 @@ export default function SavedRoutes({
       )}
 
       {routes.length >= MAX_ROUTES && (
-        <p className="text-xs text-gray-500 mt-2 text-center">
+        <p className="text-xs text-gray-500 dark:text-gray-400 mt-2 text-center">
           Maximum of {MAX_ROUTES} routes reached
         </p>
       )}

@@ -41,31 +41,31 @@ export default function ServiceAlerts() {
 
   const severityStyles = {
     info: {
-      container: 'bg-blue-50 border-blue-400',
-      icon: 'text-blue-600',
-      title: 'text-blue-900',
-      description: 'text-blue-700'
+      container: 'bg-blue-50 dark:bg-blue-900/30 border-blue-400 dark:border-blue-600',
+      icon: 'text-blue-600 dark:text-blue-400',
+      title: 'text-blue-900 dark:text-blue-200',
+      description: 'text-blue-700 dark:text-blue-300'
     },
     warning: {
-      container: 'bg-yellow-50 border-yellow-400',
-      icon: 'text-yellow-600',
-      title: 'text-yellow-900',
-      description: 'text-yellow-700'
+      container: 'bg-yellow-50 dark:bg-yellow-900/30 border-yellow-400 dark:border-yellow-600',
+      icon: 'text-yellow-600 dark:text-yellow-400',
+      title: 'text-yellow-900 dark:text-yellow-200',
+      description: 'text-yellow-700 dark:text-yellow-300'
     },
     critical: {
-      container: 'bg-red-50 border-red-400',
-      icon: 'text-red-600',
-      title: 'text-red-900',
-      description: 'text-red-700'
+      container: 'bg-red-50 dark:bg-red-900/30 border-red-400 dark:border-red-600',
+      icon: 'text-red-600 dark:text-red-400',
+      title: 'text-red-900 dark:text-red-200',
+      description: 'text-red-700 dark:text-red-300'
     }
   };
 
   return (
     <div className="space-y-3">
       <div className="flex items-center gap-2">
-        <h2 className="text-xl font-bold text-gray-800">Service Alerts</h2>
+        <h2 className="text-xl font-bold text-gray-800 dark:text-gray-100">Service Alerts</h2>
         {isMockData && (
-          <span className="text-xs bg-yellow-100 text-yellow-800 px-2 py-1 rounded font-semibold">
+          <span className="text-xs bg-yellow-100 dark:bg-yellow-900 text-yellow-800 dark:text-yellow-200 px-2 py-1 rounded font-semibold">
             DEMO MODE
           </span>
         )}
