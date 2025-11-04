@@ -67,14 +67,14 @@ export default function Home() {
 
       {/* Help Text */}
       {!isValidRoute && (
-        <div className="bg-blue-50 border-l-4 border-blue-400 rounded-lg p-6 text-center">
-          <h3 className="text-lg font-semibold text-blue-900 mb-2">
+        <div className="bg-blue-50 dark:bg-blue-900/30 border-l-4 border-blue-400 dark:border-blue-600 rounded-lg p-6 text-center">
+          <h3 className="text-lg font-semibold text-blue-900 dark:text-blue-200 mb-2">
             Welcome to Caltrain Commuter!
           </h3>
-          <p className="text-blue-700">
+          <p className="text-blue-700 dark:text-blue-300">
             Select your origin and destination stations above to see train schedules and weather information.
           </p>
-          <p className="text-sm text-blue-600 mt-2">
+          <p className="text-sm text-blue-600 dark:text-blue-400 mt-2">
             Save your frequent routes for quick access!
           </p>
         </div>
