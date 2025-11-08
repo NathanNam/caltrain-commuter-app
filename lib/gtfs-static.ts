@@ -545,10 +545,23 @@ export async function getScheduledTrains(
 
     // Include trains that either:
     // 1. Haven't departed from origin yet (future departures)
-    // 2. Have departed but haven't arrived at destination yet (en-route trains)
+    // 2. Have departed but haven't arrived at destination yet (en-route trains, only if delayed)
     // This allows showing trains like "Train 169 - 13 min late" that are currently traveling
-    if (actualArrivalTimeMs < currentTimeMs) continue; // Skip trains that already arrived
-    // Note: We no longer skip trains that have departed - we show en-route trains too
+
+    // Skip trains that have already arrived at destination
+    if (actualArrivalTimeMs < currentTimeMs) continue;
+
+    // For trains that have already departed from origin, only show them if they're delayed
+    // This prevents showing trains that have left but aren't relevant anymore
+    // Exception: If the train has a delay, show it as en-route
+    if (actualDepartureTimeMs < currentTimeMs) {
+      // Train has already departed from origin
+      // Only show if there's a delay (meaning it's still relevant/en-route)
+      const hasDelay = actualDepartureTimeMs !== departureDate.getTime();
+      if (!hasDelay) {
+        continue; // Skip trains that have departed without delays
+      }
+    }
 
     const durationMinutes = Math.round((arrivalDate.getTime() - departureDate.getTime()) / 60000);
 
