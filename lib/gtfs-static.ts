@@ -519,14 +519,16 @@ export async function getScheduledTrains(
     // If delayed, use actual departure time (scheduled + delay) for filtering
     // Priority: 1) GTFS-Realtime, 2) Caltrain.com alerts
     let actualDepartureTimeMs = departureDate.getTime();
+    let actualArrivalTimeMs = arrivalDate.getTime();
 
     // First, try GTFS-Realtime
     if (tripUpdates.length > 0) {
       const delayInfo = getTripDelay(tripUpdates, trip.trip_id);
 
       if (delayInfo && delayInfo.delay !== 0) {
-        // Apply delay to scheduled departure time
+        // Apply delay to scheduled departure and arrival times
         actualDepartureTimeMs = departureDate.getTime() + (delayInfo.delay * 60 * 1000);
+        actualArrivalTimeMs = arrivalDate.getTime() + (delayInfo.delay * 60 * 1000);
       }
     }
 
@@ -535,13 +537,18 @@ export async function getScheduledTrains(
       const alertDelay = caltrainAlerts.get(trip.trip_short_name);
 
       if (alertDelay) {
-        // Apply delay to scheduled departure time
+        // Apply delay to scheduled departure and arrival times
         actualDepartureTimeMs = departureDate.getTime() + (alertDelay.delayMinutes * 60 * 1000);
+        actualArrivalTimeMs = arrivalDate.getTime() + (alertDelay.delayMinutes * 60 * 1000);
       }
     }
 
-    // Only include trains that haven't actually departed yet (considering delays)
-    if (actualDepartureTimeMs < currentTimeMs) continue;
+    // Include trains that either:
+    // 1. Haven't departed from origin yet (future departures)
+    // 2. Have departed but haven't arrived at destination yet (en-route trains)
+    // This allows showing trains like "Train 169 - 13 min late" that are currently traveling
+    if (actualArrivalTimeMs < currentTimeMs) continue; // Skip trains that already arrived
+    // Note: We no longer skip trains that have departed - we show en-route trains too
 
     const durationMinutes = Math.round((arrivalDate.getTime() - departureDate.getTime()) / 60000);
 
@@ -579,7 +586,7 @@ export async function getScheduledTrains(
     return [];
   }
 
-  console.log(`Found ${trains.length} future trains, sorting and limiting to 5`);
+  console.log(`Found ${trains.length} trains (including en-route), sorting and limiting to 5`);
 
   // Sort all trains by departure time and return the next 5
   return trains

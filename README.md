@@ -28,8 +28,8 @@ This app provides comprehensive real-time information for Caltrain commuters acr
 
 - 🚆 **Real-time train delays** with triple-redundant delay tracking:
   - Primary: 511.org GTFS-Realtime API
-  - Backup: @CaltrainAlerts Twitter/X automated delay tweets
-  - Fallback: Caltrain.com alerts scraping
+  - Secondary: Caltrain.com alerts scraping (train-specific & system-wide)
+  - Tertiary: SimplifyTransit alerts scraping (system-wide delays)
 - 🌤️ **Live weather** for origin and destination stations
 - 🎫 **Event crowding alerts** for 9+ SF venues (Oracle Park, Chase Center, Moscone, etc.)
 - 📍 **23 active Caltrain stations** with GPS coordinates (excluding closed stations and South County Connector)
@@ -50,12 +50,13 @@ This app provides comprehensive real-time information for Caltrain commuters acr
   - Holidays: Special holiday schedule (every 60 mins)
 - **Real-Time Delay Tracking**: Triple-redundant delay detection for maximum reliability 🚦
   - **Primary Source**: 511.org GTFS-Realtime API (most accurate, trip-specific delays)
-  - **Backup Source**: @CaltrainAlerts Twitter/X (24/7 automated delay tweets when trains >10 min late)
-  - **Fallback Source**: Caltrain.com alerts web scraping
+  - **Secondary Source**: Caltrain.com alerts web scraping (train-specific and system-wide delays)
+  - **Tertiary Source**: SimplifyTransit alerts scraping (system-wide delays as final backup)
   - Visual indicators for on-time, delayed, early, or cancelled trains
   - Delay duration displayed in minutes
   - Color-coded status badges (green = on-time, orange = delayed, red = cancelled)
   - Automatic failover when 511.org is unavailable
+  - En-route train support: Shows trains currently traveling (already departed but not yet arrived)
 - **Weather Information**: See current weather for both origin and destination stations
 - **Event Crowding Alerts**: See upcoming games and events at major SF Bay Area venues that may cause crowding 🏟️
   - **🆕 Automated Sports Schedules** - Free, no API keys required!
@@ -81,8 +82,8 @@ This app provides comprehensive real-time information for Caltrain commuters acr
 - **APIs**:
   - **Delay Data (triple-redundant)**:
     - 511.org Transit API (GTFS-Realtime - primary source)
-    - Twitter/X (@CaltrainAlerts - automated delay tweets, backup source)
-    - Caltrain.com (web scraping - fallback source)
+    - Caltrain.com (web scraping - secondary source for train-specific & system-wide delays)
+    - SimplifyTransit.com (web scraping - tertiary source for system-wide delays)
   - OpenWeatherMap API (weather data)
   - **Sports APIs (all free, no keys required)**:
     - ESPN NBA API (Warriors games)
@@ -95,7 +96,7 @@ This app provides comprehensive real-time information for Caltrain commuters acr
 - **Data Format**: GTFS-Realtime Protocol Buffers
 - **Storage**: localStorage for saved routes
 - **Event Fetching**: Runtime web scraping with 24-hour caching
-- **Delay Scraping**: Puppeteer headless browser for Twitter and Caltrain.com alerts
+- **Delay Scraping**: Puppeteer headless browser for Caltrain.com and SimplifyTransit alerts
 
 ## Getting Started
 
@@ -338,7 +339,10 @@ caltrain-commuter-app-no-instrumentation/
 │   ├── moscone-events.ts        # Legacy static Moscone events (no longer used)
 │   ├── chase-center-events.ts   # Chase Center events (Warriors, concerts)
 │   ├── gtfs-static.ts           # GTFS Static schedule parser
-│   └── gtfs-realtime.ts         # GTFS-Realtime API utilities
+│   ├── gtfs-realtime.ts         # GTFS-Realtime API utilities
+│   ├── caltrain-alerts-scraper.ts # Caltrain.com alerts scraper (train-specific & system-wide delays)
+│   ├── simplifytransit-scraper.ts # SimplifyTransit alerts scraper (system-wide delays)
+│   └── twitter-alerts-scraper.ts  # Twitter/X scraper (deprecated, no longer used)
 ├── scripts/
 │   ├── README.md                # Documentation for helper scripts
 │   └── update-moscone-events.mjs # Script to update Moscone events monthly
@@ -469,9 +473,9 @@ For issues and questions, please open an issue on GitHub.
 
 ### Train Delay Tracking
 
-The app uses a **dual-source delay detection system** combining 511.org GTFS-Realtime with Caltrain.com alerts for maximum accuracy:
+The app uses a **triple-redundant delay detection system** with automatic failover for maximum reliability:
 
-#### Layer 1: GTFS-Realtime (511.org)
+#### Priority 1: GTFS-Realtime (511.org) - PRIMARY SOURCE
 1. **Trip Updates Feed**: Fetches real-time delay data every 30 seconds from 511.org
 2. **Protocol Buffers**: Uses industry-standard GTFS-Realtime format for efficient data transfer
 3. **Train-Specific Matching**: Each train's delay is matched by GTFS trip_id for accuracy
@@ -479,35 +483,58 @@ The app uses a **dual-source delay detection system** combining 511.org GTFS-Rea
    - Checks maximum delay across all stops in the trip (captures delays that accumulate during the journey)
    - Matches delay information as reported by 511.org's official feed
 
-#### Layer 2: Caltrain.com Alert Scraping (NEW!)
+#### Priority 2: Caltrain.com Alert Scraping - SECONDARY SOURCE
 4. **Automated Web Scraping**: Uses Puppeteer to scrape https://www.caltrain.com/alerts in real-time
    - Parses official Caltrain PADS alerts (Passenger Alert and Display System)
-   - Extracts train-specific delay information from alert text
-   - Handles patterns like "Please Expect Up To 40-45 Minute Delay for Train 165"
+   - Extracts **train-specific delays** from patterns like "Please Expect Up To 40-45 Minute Delay for Train 165"
+   - Detects **system-wide delays** like "Expect 30-60 Minute Delay For All Trains Near San Jose Diridon"
+   - Handles directional delays (northbound, southbound, or both directions)
 5. **Smart Priority System**:
-   - **Caltrain alerts override GTFS-RT** when GTFS-RT shows 0 delay but alerts indicate a delay
+   - **GTFS-RT is always checked first** (most accurate, trip-specific)
+   - **Caltrain alerts fill gaps** when GTFS-RT shows 0 delay but alerts indicate a delay
+   - **System-wide delays** apply to all trains in the affected direction
    - This solves cases where 511.org data is incomplete or stale
-   - GTFS-RT still used for non-zero delays (both sources complement each other)
-6. **Delay-Aware Filtering**:
-   - Trains filter based on **actual departure time** (scheduled + delay), not just scheduled time
+
+#### Priority 3: SimplifyTransit Alert Scraping - TERTIARY SOURCE
+6. **Final Backup System**: Uses Puppeteer to scrape https://app.simplifytransit.com/alerts/caltrain
+   - Provides **system-wide delay information** as a last-resort backup
+   - Extracts delay patterns like "Please Continue to Expect Up to 30-60 Delay for All Trains"
+   - Only used when both GTFS-RT and Caltrain.com alerts show no delays
+   - Ensures delay information is always available even when primary sources fail
+
+#### Advanced Features
+7. **Delay-Aware Filtering**:
+   - Trains filter based on **actual arrival time** (scheduled + delay), not just scheduled time
+   - Shows **en-route trains**: Trains that have departed but haven't arrived yet (currently traveling)
    - Delayed trains appear in schedules even if their scheduled departure has passed
    - Handles delays of any duration (including delays longer than 1 hour)
 
 #### Display & Features
-7. **Schedule Awareness**: Automatically handles different schedules:
+8. **Schedule Awareness**: Automatically handles different schedules:
    - **Weekday schedule**: More frequent trains during peak hours (6-9am, 4-7pm)
    - **Weekend schedule**: Reduced service on Saturdays and Sundays
    - **Holiday schedule**: Special service on major US holidays (New Year's, Memorial Day, Independence Day, Labor Day, Thanksgiving, Christmas)
    - Real-time API automatically provides correct schedule based on current date
-8. **Delay Detection**:
+9. **Delay Detection**:
    - Compares scheduled vs. actual times at each stop
    - **Delay threshold**: Shows trains as "delayed" when 1 minute or more late
    - Uses the maximum delay across all stops to capture delays accumulated during the journey
-9. **Visual Indicators**:
+10. **Visual Indicators**:
    - 🟢 Green badge = On time (0 minutes delay)
    - 🟠 Orange badge = Delayed (1+ minutes - shows exact delay)
    - 🔴 Red badge = Cancelled
-10. **Service Alerts**: Displays system-wide disruptions and maintenance notices
+11. **Service Alerts**: Displays system-wide disruptions and maintenance notices
+
+#### Why Triple-Redundant?
+
+**Problem**: GTFS-Realtime can sometimes be delayed in reporting or may not have complete delay information for all trains.
+
+**Solution**: The app uses three independent sources with smart priority:
+- **GTFS-RT (PRIMARY)**: Most accurate when available, updates every 30 seconds
+- **Caltrain.com (SECONDARY)**: Official Caltrain alerts, provides both train-specific and system-wide delay info
+- **SimplifyTransit (TERTIARY)**: Community-sourced system-wide delays as final backup
+
+**Result**: Maximum reliability - the app always shows the most accurate delay information available, even if one or two sources fail.
 
 ### Weather Data
 

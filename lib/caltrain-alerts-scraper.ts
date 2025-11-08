@@ -7,12 +7,63 @@ export interface CaltrainAlert {
   alertText: string;
   type: 'delay' | 'running-ahead' | 'cancellation' | 'general' | 'elevator';
   severity: 'info' | 'warning' | 'critical';
+  // System-wide delay information
+  isSystemWide?: boolean;
+  affectedLocation?: string; // e.g., "San Jose Diridon", "Redwood City"
+  affectedDirection?: 'northbound' | 'southbound' | 'both';
 }
 
 export interface TrainDelay {
   trainNumber: string;
   delayMinutes: number;
   source: 'caltrain-alerts';
+}
+
+/**
+ * Parse system-wide delay information from alert text
+ * Examples:
+ * - "Expect 30-60 Minute Delay For All Trains Near San Jose Diridon"
+ * - "All northbound trains delayed 45 minutes"
+ * - "Delays of 20-30 minutes for all trains"
+ */
+function parseSystemWideDelay(alertText: string): { delayMinutes: number; location?: string; direction?: 'northbound' | 'southbound' | 'both' } | null {
+  const lowerText = alertText.toLowerCase();
+
+  // Check if this is a system-wide delay (mentions "all trains")
+  if (!lowerText.includes('all trains') && !lowerText.includes('all northbound') && !lowerText.includes('all southbound')) {
+    return null;
+  }
+
+  // Extract delay duration
+  // Pattern: "X-Y minute delay" or "X minute delay"
+  const delayMatch = alertText.match(/(\d+)(?:-(\d+))?\s*minute\s*delay/i);
+  if (!delayMatch) {
+    return null;
+  }
+
+  const minDelay = parseInt(delayMatch[1]);
+  const maxDelay = delayMatch[2] ? parseInt(delayMatch[2]) : minDelay;
+
+  // Extract location if mentioned
+  let location: string | undefined;
+  const locationMatch = alertText.match(/(?:near|at|around)\s+([A-Za-z\s]+?)(?:\.|$|,)/i);
+  if (locationMatch) {
+    location = locationMatch[1].trim();
+  }
+
+  // Extract direction
+  let direction: 'northbound' | 'southbound' | 'both' = 'both';
+  if (lowerText.includes('northbound')) {
+    direction = 'northbound';
+  } else if (lowerText.includes('southbound')) {
+    direction = 'southbound';
+  }
+
+  return {
+    delayMinutes: maxDelay, // Use max delay for conservative estimates
+    location,
+    direction
+  };
 }
 
 /**
@@ -114,16 +165,23 @@ function parseAlert(alertText: string): CaltrainAlert {
   const trainMatch = alertText.match(/train\s+(\d+)/i);
   const trainNumber = trainMatch ? trainMatch[1] : undefined;
 
-  // Extract delay information
+  // Extract delay information (train-specific)
   const delayInfo = parseAlertForTrainDelay(alertText);
   const delayMinutes = delayInfo?.delayMinutes;
 
+  // Check for system-wide delays
+  const systemWideInfo = parseSystemWideDelay(alertText);
+  const isSystemWide = !!systemWideInfo;
+
   return {
     trainNumber,
-    delayMinutes,
+    delayMinutes: delayMinutes || systemWideInfo?.delayMinutes,
     alertText: alertText.trim(),
     type,
-    severity
+    severity,
+    isSystemWide,
+    affectedLocation: systemWideInfo?.location,
+    affectedDirection: systemWideInfo?.direction
   };
 }
 
@@ -217,6 +275,7 @@ export async function fetchCaltrainAlerts(): Promise<CaltrainAlert[]> {
 
 /**
  * Extract train delays from alert list
+ * Returns both train-specific delays and system-wide delay information
  */
 export function extractTrainDelays(alerts: CaltrainAlert[]): Map<string, TrainDelay> {
   const delays = new Map<string, TrainDelay>();
@@ -233,6 +292,13 @@ export function extractTrainDelays(alerts: CaltrainAlert[]): Map<string, TrainDe
   }
 
   return delays;
+}
+
+/**
+ * Get system-wide delay alerts that affect all trains
+ */
+export function getSystemWideDelays(alerts: CaltrainAlert[]): CaltrainAlert[] {
+  return alerts.filter(alert => alert.isSystemWide && alert.delayMinutes);
 }
 
 /**

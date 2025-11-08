@@ -19,13 +19,19 @@ export interface TwitterTrainDelay {
  * - "NB Train 153 on time"
  */
 export async function scrapeCaltrainAlertsTwitter(): Promise<TwitterTrainDelay[]> {
+  console.log('[Twitter Scraper] Function called - starting scrape process');
   const delays: TwitterTrainDelay[] = [];
 
   let browser;
   try {
+    console.log('[Twitter Scraper] Attempting to import Puppeteer...');
+    // Dynamic import to avoid issues with Edge runtime
+    const puppeteer = await import('puppeteer');
+    console.log('[Twitter Scraper] Puppeteer imported successfully');
+
     console.log('[Twitter Scraper] Launching browser to fetch @CaltrainAlerts tweets...');
 
-    browser = await puppeteer.launch({
+    browser = await puppeteer.default.launch({
       headless: true,
       args: [
         '--no-sandbox',
@@ -42,19 +48,36 @@ export async function scrapeCaltrainAlertsTwitter(): Promise<TwitterTrainDelay[]
       'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
     );
 
-    // Navigate to @CaltrainAlerts profile
-    await page.goto('https://x.com/CaltrainAlerts', {
+    // Navigate to @CaltrainAlerts profile with 'with_replies' to get chronological timeline
+    // This ensures we see ALL tweets, not just pinned/top tweets
+    await page.goto('https://x.com/CaltrainAlerts/with_replies', {
       waitUntil: 'networkidle2',
       timeout: 30000,
     });
 
+    console.log('[Twitter Scraper] Waiting for tweets to load...');
     // Wait for tweets to load
     await page.waitForSelector('article[data-testid="tweet"]', { timeout: 10000 });
 
+    // Give extra time for initial tweets to fully render
+    console.log('[Twitter Scraper] Waiting 3 seconds for initial tweets to render...');
+    await new Promise(resolve => setTimeout(resolve, 3000));
+
+    // Scroll down to load more tweets (5 scrolls to get more recent tweets)
+    console.log('[Twitter Scraper] Scrolling to load more tweets...');
+    for (let i = 0; i < 5; i++) {
+      await page.evaluate(() => {
+        window.scrollTo(0, document.body.scrollHeight);
+      });
+      // Wait for new tweets to load after each scroll
+      console.log(`[Twitter Scraper] Scroll ${i + 1}/5 - waiting 3 seconds...`);
+      await new Promise(resolve => setTimeout(resolve, 3000));
+    }
+
     // Extract tweet text from recent tweets (last 24 hours)
-    const tweets = await page.evaluate(() => {
+    const allTweets = await page.evaluate(() => {
       const tweetElements = document.querySelectorAll('article[data-testid="tweet"]');
-      const results: { text: string; time: string }[] = [];
+      const allResults: { text: string; time: string; tweetDate: string }[] = [];
 
       tweetElements.forEach((tweet) => {
         // Get tweet text
@@ -62,14 +85,35 @@ export async function scrapeCaltrainAlertsTwitter(): Promise<TwitterTrainDelay[]
         const timeElement = tweet.querySelector('time');
 
         if (textElement && timeElement) {
-          results.push({
-            text: textElement.textContent || '',
-            time: timeElement.getAttribute('datetime') || '',
-          });
+          const tweetTime = timeElement.getAttribute('datetime');
+          if (tweetTime) {
+            allResults.push({
+              text: textElement.textContent || '',
+              time: tweetTime,
+              tweetDate: new Date(tweetTime).toISOString(),
+            });
+          }
         }
       });
 
-      return results;
+      return allResults;
+    });
+
+    console.log(`[Twitter Scraper] Found ${allTweets.length} total tweets on page`);
+
+    // Log first 5 tweets to debug what we're actually seeing
+    for (let i = 0; i < Math.min(allTweets.length, 5); i++) {
+      const tweet = allTweets[i];
+      console.log(`[Twitter Scraper] Tweet ${i + 1}: "${tweet.text.substring(0, 80)}..." (posted: ${tweet.tweetDate})`);
+    }
+
+    // Filter to last 24 hours
+    const now = new Date();
+    const oneDayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+
+    const tweets = allTweets.filter(tweet => {
+      const tweetDate = new Date(tweet.time);
+      return tweetDate >= oneDayAgo;
     });
 
     console.log(`[Twitter Scraper] Found ${tweets.length} recent tweets from @CaltrainAlerts`);
@@ -101,6 +145,8 @@ export async function scrapeCaltrainAlertsTwitter(): Promise<TwitterTrainDelay[]
  * Parse train delay information from a tweet text
  *
  * Common patterns:
+ * - "Train 166 southbound is running about 14 minutes late approaching San Carlos"
+ * - "Train 169 northbound is running about 10 minutes late approaching Santa Clara"
  * - "Train 151 is running approximately 19 minutes late"
  * - "Train 425 southbound delayed 9 minutes"
  * - "NB Train 153 on time"
@@ -139,11 +185,13 @@ function parseDelayFromTweet(tweetText: string, timestamp: string): TwitterTrain
 
   // Delay patterns
   // Match: "19 minutes late", "delayed 9 minutes", "running 5 min late", "delayed by 12 minutes"
+  // Also match: "running about 14 minutes late", "approximately 10 minutes late"
   const delayPatterns = [
     /(\d+)\s+min(?:ute)?s?\s+late/i,
     /delayed?\s+(?:by\s+)?(\d+)\s+min(?:ute)?s?/i,
-    /running\s+(?:approximately\s+)?(\d+)\s+min(?:ute)?s?\s+late/i,
+    /running\s+(?:about\s+|approximately\s+)?(\d+)\s+min(?:ute)?s?\s+late/i,
     /approximately\s+(\d+)\s+min(?:ute)?s?\s+late/i,
+    /about\s+(\d+)\s+min(?:ute)?s?\s+late/i,
   ];
 
   for (const pattern of delayPatterns) {
@@ -191,22 +239,26 @@ export async function getTrainDelayFromTwitter(trainNumber: string): Promise<num
  * Returns a map of train number to delay in minutes
  */
 export async function getAllTrainDelaysFromTwitter(): Promise<Map<string, number>> {
+  console.log('[Twitter Scraper - getAllTrainDelaysFromTwitter] Starting to fetch all train delays...');
   const delayMap = new Map<string, number>();
 
   try {
+    console.log('[Twitter Scraper - getAllTrainDelaysFromTwitter] Calling scrapeCaltrainAlertsTwitter()...');
     const delays = await scrapeCaltrainAlertsTwitter();
+    console.log(`[Twitter Scraper - getAllTrainDelaysFromTwitter] Received ${delays.length} delay records from scraper`);
 
     // Build map of train number to delay
     for (const delay of delays) {
       // Use the most recent tweet for each train (first occurrence)
       if (!delayMap.has(delay.trainNumber)) {
         delayMap.set(delay.trainNumber, delay.delayMinutes);
+        console.log(`[Twitter Scraper - getAllTrainDelaysFromTwitter] Added train ${delay.trainNumber}: ${delay.delayMinutes} min delay`);
       }
     }
 
-    console.log(`[Twitter Scraper] Retrieved delays for ${delayMap.size} trains`);
+    console.log(`[Twitter Scraper - getAllTrainDelaysFromTwitter] Retrieved delays for ${delayMap.size} trains`);
   } catch (error) {
-    console.error('[Twitter Scraper] Error getting all train delays:', error);
+    console.error('[Twitter Scraper - getAllTrainDelaysFromTwitter] Error getting all train delays:', error);
   }
 
   return delayMap;

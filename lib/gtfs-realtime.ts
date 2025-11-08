@@ -226,48 +226,70 @@ export function getStopDelay(
  *
  * @param updates - Array of trip updates from GTFS-Realtime feed
  * @param tripId - The GTFS trip_id to match
+ * @param trainNumber - Optional train number to use as fallback if exact trip_id match fails
  * @returns Delay information for the trip, or null if not found
  */
 export function getTripDelay(
   updates: TripUpdate[],
-  tripId: string
+  tripId: string,
+  trainNumber?: string
 ): { delay: number; status: 'on-time' | 'delayed' | 'cancelled' } | null {
+  // First, try exact trip_id match
   for (const update of updates) {
     if (update.tripId === tripId) {
-      if (update.stopTimeUpdates.length === 0) {
-        return null;
+      return calculateTripDelay(update);
+    }
+  }
+
+  // Fallback: Try matching by train number (GTFS-RT often uses just the train number as trip_id)
+  if (trainNumber) {
+    for (const update of updates) {
+      // Check if tripId equals train number OR ends with train number
+      if (update.tripId === trainNumber || update.tripId.endsWith(`-${trainNumber}`)) {
+        return calculateTripDelay(update);
       }
-
-      // Find the maximum delay across all stops in this trip
-      // This captures delays that accumulate during the journey
-      let maxDelaySeconds = 0;
-      let isCancelled = false;
-
-      for (const stop of update.stopTimeUpdates) {
-        if (stop.scheduleRelationship === 'SKIPPED' || stop.scheduleRelationship === 'CANCELED') {
-          isCancelled = true;
-          break;
-        }
-
-        const stopDelay = stop.departure?.delay || stop.arrival?.delay || 0;
-        if (Math.abs(stopDelay) > Math.abs(maxDelaySeconds)) {
-          maxDelaySeconds = stopDelay;
-        }
-      }
-
-      const delayMinutes = Math.round(maxDelaySeconds / 60);
-
-      let status: 'on-time' | 'delayed' | 'cancelled' = 'on-time';
-      if (isCancelled) {
-        status = 'cancelled';
-      } else if (Math.abs(delayMinutes) >= 1) {
-        // Show delays of 1 minute or more
-        status = 'delayed';
-      }
-
-      return { delay: delayMinutes, status };
     }
   }
 
   return null;
+}
+
+/**
+ * Helper function to calculate delay from a TripUpdate
+ */
+function calculateTripDelay(
+  update: TripUpdate
+): { delay: number; status: 'on-time' | 'delayed' | 'cancelled' } | null {
+  if (update.stopTimeUpdates.length === 0) {
+    return null;
+  }
+
+  // Find the maximum delay across all stops in this trip
+  // This captures delays that accumulate during the journey
+  let maxDelaySeconds = 0;
+  let isCancelled = false;
+
+  for (const stop of update.stopTimeUpdates) {
+    if (stop.scheduleRelationship === 'SKIPPED' || stop.scheduleRelationship === 'CANCELED') {
+      isCancelled = true;
+      break;
+    }
+
+    const stopDelay = stop.departure?.delay || stop.arrival?.delay || 0;
+    if (Math.abs(stopDelay) > Math.abs(maxDelaySeconds)) {
+      maxDelaySeconds = stopDelay;
+    }
+  }
+
+  const delayMinutes = Math.round(maxDelaySeconds / 60);
+
+  let status: 'on-time' | 'delayed' | 'cancelled' = 'on-time';
+  if (isCancelled) {
+    status = 'cancelled';
+  } else if (Math.abs(delayMinutes) >= 1) {
+    // Show delays of 1 minute or more
+    status = 'delayed';
+  }
+
+  return { delay: delayMinutes, status };
 }
