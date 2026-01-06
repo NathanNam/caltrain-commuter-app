@@ -173,10 +173,6 @@ WEATHER_API_KEY=your_openweathermap_api_key_here
 
 # Ticketmaster - For event crowding alerts
 TICKETMASTER_API_KEY=your_consumer_key_here
-
-# OpenTelemetry - For observability and monitoring
-OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318
-NEXT_PUBLIC_OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318
 ```
 
 ### Detailed Setup Instructions
@@ -314,49 +310,6 @@ node scripts/update-moscone-events-auto.mjs
 
 **Why this matters:** Major conventions can bring 100K+ attendees and cause severe crowding at 4th & King and 22nd Street stations during peak commute hours. The app automatically tracks these to help you plan your commute.
 
-## Observability & Monitoring
-
-The application includes comprehensive OpenTelemetry instrumentation for production-ready observability:
-
-### Features
-- **Distributed Tracing**: Automatic tracing for all HTTP requests, API calls, and external service interactions
-- **Metrics Collection**: Performance metrics including response times, throughput, and resource usage
-- **Structured Logging**: Correlated logs with trace context for debugging and monitoring
-- **Error Tracking**: Automatic error capture and reporting with full context
-- **Client-Side Monitoring**: Browser instrumentation for user experience tracking
-
-### Configuration
-
-Add OpenTelemetry configuration to your `.env.local`:
-
-```bash
-# Server-side telemetry endpoint
-OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318
-
-# Client-side telemetry endpoint (requires NEXT_PUBLIC_ prefix)
-NEXT_PUBLIC_OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318
-
-# Optional: Authentication tokens
-OTEL_EXPORTER_OTLP_BEARER_TOKEN=your_token_here
-NEXT_PUBLIC_OTEL_EXPORTER_OTLP_BEARER_TOKEN=your_token_here
-```
-
-### Compatible Backends
-- **Observe.ai** (recommended for production)
-- **Jaeger** (with OTLP receiver)
-- **OpenTelemetry Collector**
-- **Grafana Cloud**
-- Any OTLP-compatible observability platform
-
-### What's Instrumented
-- Next.js API routes (`/api/trains`, `/api/weather`, `/api/events`, `/api/alerts`)
-- External API calls (511.org, OpenWeatherMap, Ticketmaster)
-- Database operations and file system access
-- Client-side fetch requests and page loads
-- Error boundaries and exception handling
-
-The instrumentation is **non-intrusive** and adds minimal overhead. To disable, simply don't set the `OTEL_*` environment variables.
-
 ## Project Structure
 
 ```
@@ -371,8 +324,6 @@ caltrain-commuter-app-no-instrumentation/
 │   ├── page.tsx                 # Main dashboard page
 │   └── globals.css              # Global styles
 ├── components/
-│   ├── providers/
-│   │   └── OtelClientInit.tsx   # Client-side OpenTelemetry initialization
 │   ├── StationSelector.tsx      # Origin/destination selector
 │   ├── TrainList.tsx            # Train schedule display with delay indicators
 │   ├── WeatherWidget.tsx        # Weather information
@@ -403,12 +354,8 @@ caltrain-commuter-app-no-instrumentation/
 │       ├── stop_times.txt       # Actual train times
 │       └── stops.txt            # Station stops
 ├── images/                      # Screenshots
-├── public/
-│   └── icons/                   # Weather icons (if needed)
-├── instrumentation.ts           # Next.js server-side OpenTelemetry initialization
-├── otel-server.ts               # Server-side OpenTelemetry configuration
-├── otel-client.ts               # Client-side OpenTelemetry configuration
-└── .env.local.example           # Environment variables template
+└── public/
+    └── icons/                   # Weather icons (if needed)
 ```
 
 ## GTFS Schedule Data
