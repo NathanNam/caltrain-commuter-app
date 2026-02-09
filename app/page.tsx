@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import StationSelector from '@/components/StationSelector';
 import TrainList from '@/components/TrainList';
+import TrainMap from '@/components/TrainMap';
 import WeatherWidget from '@/components/WeatherWidget';
 import ServiceAlerts from '@/components/ServiceAlerts';
 import SavedRoutes from '@/components/SavedRoutes';
@@ -62,6 +63,9 @@ export default function Home() {
 
           {/* Train Schedule */}
           <TrainList originId={originId} destinationId={destinationId} />
+
+          {/* Live Train Map */}
+          <TrainMap originId={originId} destinationId={destinationId} />
         </>
       )}
 

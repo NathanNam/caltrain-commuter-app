@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { Train } from '@/lib/types';
 import { getStationById } from '@/lib/stations';
-import { fetchTripUpdates, getTripDelay } from '@/lib/gtfs-realtime';
+import { fetchTripUpdates, getTripDelay, fetchVehiclePositions, getVehicleForTrip, VehiclePosition } from '@/lib/gtfs-realtime';
 import { getScheduledTrains } from '@/lib/gtfs-static';
 import { parseAlertsFromText, extractTrainDelays, fetchCaltrainAlerts, getSystemWideDelays } from '@/lib/caltrain-alerts-scraper';
 import { getSystemWideDelayFromSimplify } from '@/lib/simplifytransit-scraper';
@@ -30,12 +30,26 @@ export async function GET(request: NextRequest) {
   }
 
   // Fetch GTFS-Realtime as PRIMARY delay source (most reliable and accurate)
-  const tripUpdates = await fetchTripUpdates();
+  // Fetch both trip updates and vehicle positions in parallel
+  const [tripUpdates, vehiclePositions] = await Promise.all([
+    fetchTripUpdates(),
+    fetchVehiclePositions()
+  ]);
   const hasGTFSRealtime = tripUpdates.length > 0;
+  const hasVehiclePositions = vehiclePositions.length > 0;
 
   if (hasGTFSRealtime) {
     console.log(`✓ GTFS-Realtime (PRIMARY): Fetched ${tripUpdates.length} trip updates from 511.org`);
     console.log(`Trip IDs in GTFS-Realtime feed:`, tripUpdates.map(u => u.tripId).join(', '));
+  }
+
+  if (hasVehiclePositions) {
+    console.log(`✓ Vehicle Positions: Fetched ${vehiclePositions.length} active trains from 511.org`);
+  } else {
+    console.log('✗ Vehicle Positions: No active vehicles found');
+  }
+
+  if (hasGTFSRealtime) {
 
     // DEBUG: Log detailed info for train 174
     const train174Update = tripUpdates.find(u => u.tripId === '174' || u.tripId.endsWith('-174'));
@@ -218,6 +232,21 @@ export async function GET(request: NextRequest) {
           }
         }
 
+        // Attach vehicle position if available
+        if (hasVehiclePositions && train.tripId) {
+          const vehiclePos = getVehicleForTrip(vehiclePositions, train.tripId);
+          if (vehiclePos) {
+            train.vehiclePosition = {
+              latitude: vehiclePos.latitude,
+              longitude: vehiclePos.longitude,
+              bearing: vehiclePos.bearing,
+              speed: vehiclePos.speed,
+              currentStatus: vehiclePos.currentStatus,
+              timestamp: vehiclePos.timestamp,
+            };
+          }
+        }
+
         if (gtfsDelay) {
           // Priority 1: GTFS-RT has delay info (including 0 delay = on-time)
           train.delay = gtfsDelay.delay;
@@ -259,6 +288,12 @@ export async function GET(request: NextRequest) {
                    'Caltrain.com alerts (SECONDARY)';
     console.log(`✓ Delay data source: ${source}`);
     console.log(`  Matched: ${matchedCount}, Unmatched: ${unmatchedCount} out of ${trains.length} trains`);
+
+    // Count trains with vehicle positions
+    const trainsWithPositions = trains.filter(t => t.vehiclePosition).length;
+    if (trainsWithPositions > 0) {
+      console.log(`✓ Vehicle positions attached to ${trainsWithPositions} trains`);
+    }
   } else {
     // Add mock delay data when no delay sources available
     console.log('⚠ Using mock delay data - no real delay sources available');
@@ -287,7 +322,9 @@ export async function GET(request: NextRequest) {
     isMockSchedule: usingMockSchedule, // Flag to indicate mock schedule data
     delaySource: hasGTFSRealtime ? 'gtfs-rt' :
                  caltrainAlerts.size > 0 ? 'caltrain-alerts' :
-                 'none'
+                 'none',
+    hasVehiclePositions: hasVehiclePositions,
+    activeVehicles: vehiclePositions.length,
   }, {
     headers: {
       'Cache-Control': 'public, s-maxage=30, stale-while-revalidate=60'

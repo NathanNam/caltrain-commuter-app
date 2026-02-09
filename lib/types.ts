@@ -20,6 +20,15 @@ export interface Train {
   type: 'Local' | 'Limited' | 'Express';
   delay?: number; // delay in minutes (positive = late, negative = early)
   status?: 'on-time' | 'delayed' | 'cancelled';
+  // Live vehicle position data from GTFS-RT
+  vehiclePosition?: {
+    latitude: number;
+    longitude: number;
+    bearing?: number; // Direction of travel in degrees
+    speed?: number; // Speed in meters per second
+    currentStatus?: 'INCOMING_AT' | 'STOPPED_AT' | 'IN_TRANSIT_TO';
+    timestamp: number; // Unix timestamp when position was recorded
+  };
 }
 
 export interface WeatherData {

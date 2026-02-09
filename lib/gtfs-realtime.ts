@@ -44,6 +44,19 @@ export interface Alert {
   }>;
 }
 
+export interface VehiclePosition {
+  vehicleId: string;
+  tripId: string;
+  routeId: string;
+  latitude: number;
+  longitude: number;
+  bearing?: number; // Direction of travel in degrees
+  speed?: number; // Speed in meters per second
+  currentStopSequence?: number;
+  currentStatus?: 'INCOMING_AT' | 'STOPPED_AT' | 'IN_TRANSIT_TO';
+  timestamp: number; // Unix timestamp
+}
+
 /**
  * Fetch real-time trip updates from 511.org
  */
@@ -166,6 +179,93 @@ export async function fetchServiceAlerts(): Promise<Alert[]> {
     console.error('Error fetching service alerts:', error);
     return [];
   }
+}
+
+/**
+ * Fetch real-time vehicle positions from 511.org
+ * Returns current locations of all active Caltrain vehicles
+ */
+export async function fetchVehiclePositions(): Promise<VehiclePosition[]> {
+  const apiKey = process.env.TRANSIT_API_KEY;
+  if (!apiKey) {
+    console.warn('TRANSIT_API_KEY not configured');
+    return [];
+  }
+
+  try {
+    const url = `${API_BASE}/vehiclepositions?api_key=${apiKey}&agency=${CALTRAIN_AGENCY}`;
+    const response = await fetch(url, {
+      next: { revalidate: 10 }, // Cache for 10 seconds (positions change frequently)
+    });
+
+    if (!response.ok) {
+      throw new Error(`511.org API error: ${response.status}`);
+    }
+
+    const buffer = await response.arrayBuffer();
+    const feed = GtfsRealtimeBindings.transit_realtime.FeedMessage.decode(
+      new Uint8Array(buffer)
+    );
+
+    const positions: VehiclePosition[] = [];
+
+    for (const entity of feed.entity) {
+      const vehicle = entity.vehicle;
+      const position = vehicle?.position;
+
+      if (vehicle && position && position.latitude != null && position.longitude != null) {
+        const trip = vehicle.trip;
+
+        positions.push({
+          vehicleId: vehicle.vehicle?.id || entity.id || '',
+          tripId: trip?.tripId || '',
+          routeId: trip?.routeId || '',
+          latitude: position.latitude,
+          longitude: position.longitude,
+          bearing: position.bearing ?? undefined,
+          speed: position.speed ?? undefined,
+          currentStopSequence: vehicle.currentStopSequence ?? undefined,
+          currentStatus: mapVehicleStatus(vehicle.currentStatus),
+          timestamp: typeof vehicle.timestamp === 'number'
+            ? vehicle.timestamp
+            : (vehicle.timestamp?.toNumber() || Date.now() / 1000),
+        });
+      }
+    }
+
+    return positions;
+  } catch (error) {
+    console.error('Error fetching vehicle positions:', error);
+    return [];
+  }
+}
+
+/**
+ * Map GTFS-RT vehicle status to string
+ */
+function mapVehicleStatus(
+  status: number | undefined | null
+): 'INCOMING_AT' | 'STOPPED_AT' | 'IN_TRANSIT_TO' | undefined {
+  switch (status) {
+    case 0:
+      return 'INCOMING_AT';
+    case 1:
+      return 'STOPPED_AT';
+    case 2:
+      return 'IN_TRANSIT_TO';
+    default:
+      return undefined;
+  }
+}
+
+/**
+ * Get vehicle position for a specific trip
+ */
+export function getVehicleForTrip(
+  positions: VehiclePosition[],
+  tripId: string
+): VehiclePosition | null {
+  return positions.find((p) => p.tripId === tripId) || null;
 }
 
 /**
