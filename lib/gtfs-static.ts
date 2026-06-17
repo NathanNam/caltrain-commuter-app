@@ -118,46 +118,50 @@ function getPacificTimeInfo(date: Date) {
 /**
  * Determine which service_id to use based on current date
  */
-function getActiveServiceId(
+function getActiveServiceIds(
   date: Date,
   calendar: GTFSCalendar[],
   calendarDates: GTFSCalendarDate[]
-): string | null {
+): string[] {
   // Get Pacific Time date information
   const { dayOfWeek, dateStr } = getPacificTimeInfo(date);
+  const currentDate = parseInt(dateStr);
 
-  // Check for exception dates (holidays)
-  const exceptionDate = calendarDates.find(
-    (cd) => cd.date === dateStr && cd.exception_type === '1'
-  );
-  if (exceptionDate) {
-    return exceptionDate.service_id;
-  }
+  // GTFS allows multiple services to be active on the same date. Collect them
+  // all: regular weekday/weekend services from calendar.txt PLUS any services
+  // added for this specific date via calendar_dates.txt (exception_type=1).
+  const activeServiceIds = new Set<string>();
 
-  // Find active service based on day of week
+  const dayNames = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+  const dayName = dayNames[dayOfWeek];
+
+  // Regular services from calendar.txt
   for (const cal of calendar) {
     const startDate = parseInt(cal.start_date);
     const endDate = parseInt(cal.end_date);
-    const currentDate = parseInt(dateStr);
 
     if (currentDate < startDate || currentDate > endDate) continue;
 
-    // Check if service is removed for this specific date
+    // Skip if service is removed for this specific date (exception_type=2)
     const removed = calendarDates.find(
       (cd) => cd.date === dateStr && cd.service_id === cal.service_id && cd.exception_type === '2'
     );
     if (removed) continue;
 
-    // Check day of week
-    const dayNames = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
-    const dayName = dayNames[dayOfWeek];
-
     if (cal[dayName as keyof GTFSCalendar] === '1') {
-      return cal.service_id;
+      activeServiceIds.add(cal.service_id);
     }
   }
 
-  return null;
+  // Services explicitly added for this date (exception_type=1). These are
+  // additive — they supplement, not replace, the regular calendar services.
+  for (const cd of calendarDates) {
+    if (cd.date === dateStr && cd.exception_type === '1') {
+      activeServiceIds.add(cd.service_id);
+    }
+  }
+
+  return Array.from(activeServiceIds);
 }
 
 /**
@@ -236,10 +240,11 @@ async function fetchGTFSData(): Promise<boolean> {
     try {
       console.log('Fetching GTFS static data from remote source...');
 
-      // Use the direct Trillium Transit URL
-      // In production, you could use 511.org API:
-      // http://api.511.org/transit/datafeeds?api_key=${apiKey}&operator_id=CT
-      const gtfsUrl = 'https://data.trilliumtransit.com/gtfs/caltrain-ca-us/caltrain-ca-us.zip';
+      // Use 511.org's official Caltrain GTFS datafeed. The previous Trillium
+      // Transit CDN feed degraded silently (returned only a single active trip
+      // per day), which forced the app into mock-schedule mode even with a valid
+      // API key. The 511 feed is the authoritative source and stays current.
+      const gtfsUrl = `http://api.511.org/transit/datafeeds?api_key=${apiKey}&operator_id=CT`;
 
       const response = await fetch(gtfsUrl);
       if (!response.ok) {
@@ -268,9 +273,20 @@ async function fetchGTFSData(): Promise<boolean> {
         ? parseCSV(calendarDatesEntry.getData().toString('utf8'))
         : [];
 
+      // Safety net: a remote feed can "succeed" but carry a schedule that has
+      // no service for today (stale/degraded feed). Don't trust it blindly —
+      // fall back to the committed local files if it yields nothing usable.
+      const activeServices = getActiveServiceIds(new Date(), gtfsCache.calendar, gtfsCache.calendarDates);
+      const activeTripCount = activeServices.length === 0
+        ? 0
+        : gtfsCache.trips.filter((t) => activeServices.includes(t.service_id)).length;
+      if (activeTripCount === 0) {
+        throw new Error('Remote GTFS feed has no active trips for today; falling back to local files');
+      }
+
       gtfsCache.lastFetch = new Date();
 
-      console.log(`GTFS data loaded from remote: ${gtfsCache.stopTimes.length} stop times, ${gtfsCache.trips.length} trips`);
+      console.log(`GTFS data loaded from remote: ${gtfsCache.stopTimes.length} stop times, ${gtfsCache.trips.length} trips (${activeTripCount} active today)`);
       return true;
     } catch (error) {
       console.error('Error fetching remote GTFS data, trying local files:', error);
@@ -376,18 +392,19 @@ export async function getScheduledTrains(
     return [];
   }
 
-  // Determine which service is active today
-  const serviceId = getActiveServiceId(date, gtfsCache.calendar, gtfsCache.calendarDates);
-  if (!serviceId) {
+  // Determine which services are active today (there can be several)
+  const serviceIds = getActiveServiceIds(date, gtfsCache.calendar, gtfsCache.calendarDates);
+  if (serviceIds.length === 0) {
     console.warn('No active service found for date:', date);
     return [];
   }
 
-  console.log(`Active service ID: ${serviceId} for date ${date.toLocaleDateString()}`);
+  console.log(`Active service IDs: ${serviceIds.join(', ')} for date ${date.toLocaleDateString()}`);
 
-  // Get all trips for this service
-  const activeTrips = gtfsCache.trips.filter((trip) => trip.service_id === serviceId);
-  console.log(`Found ${activeTrips.length} active trips for service ${serviceId}`);
+  // Get all trips for these services
+  const activeServiceIdSet = new Set(serviceIds);
+  const activeTrips = gtfsCache.trips.filter((trip) => activeServiceIdSet.has(trip.service_id));
+  console.log(`Found ${activeTrips.length} active trips for services ${serviceIds.join(', ')}`);
 
   // Determine direction based on actual station geographic order
   // Stations array is ordered north to south, so we can use array indices

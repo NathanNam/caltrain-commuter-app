@@ -259,13 +259,30 @@ function mapVehicleStatus(
 }
 
 /**
- * Get vehicle position for a specific trip
+ * Get vehicle position for a specific trip.
+ *
+ * Matches by exact trip_id first, then falls back to the train number (mirroring
+ * getTripDelay) so the live map still locates a vehicle when the static feed's
+ * trip_id and the realtime feed's tripId don't line up exactly.
+ *
+ * @param trainNumber - Optional train number to use as fallback if exact trip_id match fails
  */
 export function getVehicleForTrip(
   positions: VehiclePosition[],
-  tripId: string
+  tripId: string,
+  trainNumber?: string
 ): VehiclePosition | null {
-  return positions.find((p) => p.tripId === tripId) || null;
+  const exact = positions.find((p) => p.tripId === tripId);
+  if (exact) return exact;
+
+  if (trainNumber) {
+    const byTrainNumber = positions.find(
+      (p) => p.tripId === trainNumber || p.tripId.endsWith(`-${trainNumber}`)
+    );
+    if (byTrainNumber) return byTrainNumber;
+  }
+
+  return null;
 }
 
 /**

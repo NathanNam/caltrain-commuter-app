@@ -234,7 +234,7 @@ export async function GET(request: NextRequest) {
 
         // Attach vehicle position if available
         if (hasVehiclePositions && train.tripId) {
-          const vehiclePos = getVehicleForTrip(vehiclePositions, train.tripId);
+          const vehiclePos = getVehicleForTrip(vehiclePositions, train.tripId, train.trainNumber);
           if (vehiclePos) {
             train.vehiclePosition = {
               latitude: vehiclePos.latitude,
