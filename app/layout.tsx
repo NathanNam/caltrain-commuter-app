@@ -1,12 +1,44 @@
-import type { Metadata } from 'next'
+import type { Metadata, Viewport } from 'next'
+import { Inter, Zilla_Slab } from 'next/font/google'
 import './globals.css'
-import DarkModeToggle from '@/components/DarkModeToggle'
+
+const slab = Zilla_Slab({
+  subsets: ['latin'],
+  weight: ['500', '700'],
+  variable: '--font-slab',
+  display: 'swap',
+})
+
+const sans = Inter({
+  subsets: ['latin'],
+  variable: '--font-sans',
+  display: 'swap',
+})
 
 export const metadata: Metadata = {
   title: 'Caltrain Commuter - Train Schedules & Weather',
   description: 'Real-time Caltrain schedules and weather information for your commute',
-  viewport: 'width=device-width, initial-scale=1',
 }
+
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  themeColor: [
+    { media: '(prefers-color-scheme: light)', color: '#f2e8cf' },
+    { media: '(prefers-color-scheme: dark)', color: '#1c1a15' },
+  ],
+}
+
+// Applies the saved board (day/night) before first paint to avoid a flash.
+const themeScript = `
+(function () {
+  var theme = null;
+  try { theme = localStorage.getItem('theme'); } catch (e) {}
+  var dark = theme === 'dark' ||
+    (theme !== 'light' && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+  if (dark) document.documentElement.classList.add('dark');
+})();
+`
 
 export default function RootLayout({
   children,
@@ -14,48 +46,11 @@ export default function RootLayout({
   children: React.ReactNode
 }) {
   return (
-    <html lang="en">
+    <html lang="en" className={`${slab.variable} ${sans.variable}`} suppressHydrationWarning>
       <head>
-        <script dangerouslySetInnerHTML={{
-          __html: `
-            (function() {
-              const theme = localStorage.getItem('theme');
-              if (theme === 'dark' || (!theme && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
-                document.documentElement.classList.add('dark');
-              }
-            })();
-          `
-        }} />
+        <script dangerouslySetInnerHTML={{ __html: themeScript }} />
       </head>
-      <body className="bg-gray-50 dark:bg-gray-900 antialiased">
-        <header className="shadow-lg" style={{ backgroundColor: '#E31837' }}>
-          <div className="container mx-auto px-4 py-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <h1 className="text-2xl md:text-3xl font-bold text-white">
-                  Caltrain Commuter
-                </h1>
-                <p className="text-sm md:text-base text-white opacity-90 mt-1">
-                  Real-time schedules & weather at a glance
-                </p>
-              </div>
-              <DarkModeToggle />
-            </div>
-          </div>
-        </header>
-
-        <main className="container mx-auto px-4 py-6 min-h-screen">
-          {children}
-        </main>
-
-        <footer className="bg-gray-800 text-gray-300 mt-12">
-          <div className="container mx-auto px-4 py-6 text-center text-sm">
-            <p>
-              Built with Next.js | Data updates automatically
-            </p>
-          </div>
-        </footer>
-      </body>
+      <body>{children}</body>
     </html>
   )
 }

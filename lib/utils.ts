@@ -1,14 +1,16 @@
 // Utility functions for the Caltrain Commuter App
 
 /**
- * Format time string to human-readable format
+ * Format time string to human-readable format, always in Pacific time
+ * (Caltrain's local time), whatever the viewer's device time zone is.
  */
-export function formatTime(time: string): string {
+export function formatTime(time: string | Date): string {
   const date = new Date(time);
   return date.toLocaleTimeString('en-US', {
     hour: 'numeric',
     minute: '2-digit',
-    hour12: true
+    hour12: true,
+    timeZone: 'America/Los_Angeles'
   });
 }
 
