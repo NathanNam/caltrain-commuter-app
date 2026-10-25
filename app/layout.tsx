@@ -22,6 +22,10 @@ const DESCRIPTION =
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
+  // iOS Safari otherwise turns station names, street names and train numbers
+  // into data-detector links ("San Francisco … 22nd Street" as an address,
+  // "668" underlined); inside the SVG line those links are not drawn at all.
+  formatDetection: { telephone: false, address: false, email: false, date: false },
   title: TITLE,
   description: DESCRIPTION,
   openGraph: {
