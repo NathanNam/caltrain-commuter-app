@@ -1,7 +1,7 @@
 'use client';
 
-import { useEffect, useRef } from 'react';
-import { CITY_IDS, Direction, TOKEN_STYLE, lineStations, plainName, shortName, tokenPointer, tokenRim } from '@/lib/board';
+import { useId, useState } from 'react';
+import { CITY_IDS, Direction, TOKEN_STYLE, lineStations, placeTokens, plainName, tokenPointer, tokenRim } from '@/lib/board';
 
 interface LineStripProps {
   originIdx: number;
@@ -15,13 +15,8 @@ interface LineStripProps {
   tokens: LiveToken[];
 }
 
-export interface LiveToken {
-  idx: number;
-  label: string;
-  direction: 'Northbound' | 'Southbound';
-  /** One of the listed departures for the chosen route. */
-  mine: boolean;
-}
+export type { LiveToken } from '@/lib/board';
+import type { LiveToken } from '@/lib/board';
 
 const S3 = Math.sqrt(3);
 
@@ -41,21 +36,14 @@ function hexPoints(c: Pt, r: number, pointy: boolean): string {
  * (original drawing): green tiles for your trip, yellow for the rest of the
  * line, cities as white circles, towns as dots, live trains as tokens
  * (red southbound, blue northbound, each with a pointer in its direction).
- * Vertical on wide screens, horizontal (scrollable) on phones.
+ * Vertical everywhere: the full line on wide screens; on phones your trip plus
+ * a few stations each side, with a toggle for the whole line.
  */
 export default function LineStrip({ originIdx, destIdx, tripMinutes, tokens }: LineStripProps) {
-  const scroller = useRef<HTMLDivElement>(null);
   const lo = Math.min(originIdx, destIdx);
   const hi = Math.max(originIdx, destIdx);
-
-  // On phones, scroll the strip so the start of the trip is in view.
-  useEffect(() => {
-    const el = scroller.current;
-    if (!el) return;
-    const R = 40;
-    const x = 30 + lo * ((S3 * R) / 2);
-    el.scrollLeft = Math.max(0, x - 40);
-  }, [lo]);
+  const [whole, setWhole] = useState(false);
+  const panelId = useId();
 
   const origin = lineStations[originIdx];
   const dest = lineStations[destIdx];
@@ -67,42 +55,180 @@ export default function LineStrip({ originIdx, destIdx, tripMinutes, tokens }: L
     tripMinutes ? `, ${tripMinutes} minutes on the next train` : ''
   }.${tokenText}`;
 
+  // Phones: your trip plus a few stations each side, unless the whole line is open.
+  const first = whole ? 0 : Math.max(0, lo - PHONE_CONTEXT);
+  const last = whole ? lineStations.length - 1 : Math.min(lineStations.length - 1, hi + PHONE_CONTEXT);
+  const hidden = tokens.filter((t) => t.idx < first || t.idx > last).length;
+
   return (
     <div>
-      <div className="strip-h" ref={scroller}>
-        <Strip horizontal lo={lo} hi={hi} originIdx={originIdx} destIdx={destIdx} tripMinutes={tripMinutes} tokens={tokens} aria={aria} />
+      <div className="strip-phone">
+        <PhoneStrip
+          first={first}
+          last={last}
+          lo={lo}
+          hi={hi}
+          originIdx={originIdx}
+          destIdx={destIdx}
+          tripMinutes={tripMinutes}
+          tokens={tokens}
+          aria={aria}
+          id={panelId}
+        />
+        <div className="strip-phone-ctl">
+          {hidden > 0 && (
+            <button type="button" className="link-btn" aria-controls={panelId} aria-expanded={whole} onClick={() => setWhole(true)}>
+              +{hidden} more {hidden === 1 ? 'train' : 'trains'} on the line
+            </button>
+          )}
+          <button type="button" className="btn strip-toggle" aria-controls={panelId} aria-expanded={whole} onClick={() => setWhole(!whole)}>
+            {whole ? 'Show my trip' : 'Show whole line'}
+            <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
+              <path d={whole ? 'M2 8l4-4 4 4' : 'M2 4l4 4 4-4'} stroke="currentColor" strokeWidth="2" fill="none" />
+            </svg>
+          </button>
+        </div>
       </div>
       <div className="strip-v">
-        <Strip horizontal={false} lo={lo} hi={hi} originIdx={originIdx} destIdx={destIdx} tripMinutes={tripMinutes} tokens={tokens} aria={aria} />
+        <Strip lo={lo} hi={hi} originIdx={originIdx} destIdx={destIdx} tripMinutes={tripMinutes} tokens={tokens} aria={aria} />
       </div>
     </div>
   );
 }
 
+/** Stations shown on each side of the trip on phones before "Show whole line". */
+const PHONE_CONTEXT = 2;
+
+interface PhoneStripProps extends LineStripProps {
+  first: number;
+  last: number;
+  lo: number;
+  hi: number;
+  aria: string;
+  id: string;
+}
+
+/**
+ * Phone layout: vertical, names right-aligned on the left of the hexes, live
+ * trains in a lane to the right of the track (southbound first, then
+ * northbound, fanned out), so tokens never cover a station circle.
+ */
+function PhoneStrip({ first, last, lo, hi, originIdx, destIdx, tripMinutes, tokens, aria, id }: PhoneStripProps) {
+  const R = 22;
+  const STEP = (S3 * R) / 2;
+  const COL = 168; // centre of the left hex column
+  const LABEL_END = COL - R - 8;
+  const LANE = COL + 1.5 * R + R + 18; // first token centre, right of the hexes
+  const TOP = 14;
+  const rows = last - first + 1;
+  const pts = new Map<number, Pt>();
+  for (let i = first; i <= last; i++) pts.set(i, { x: COL + (i % 2) * 1.5 * R, y: TOP + (i - first) * STEP + R });
+  const W = 360;
+  const H = Math.round(TOP + (rows - 1) * STEP + 2 * R + 14);
+
+  const circleMinutes = (i: number): string | null => {
+    if (i === originIdx) return '0';
+    if (i === destIdx && tripMinutes != null) return String(tripMinutes);
+    return null;
+  };
+  const shown = placeTokens(
+    tokens.filter((t) => t.idx >= first && t.idx <= last),
+    (t) => pts.get(t.idx)!.y,
+    LANE
+  );
+
+  return (
+    <svg id={id} role="img" aria-label={aria} viewBox={`0 0 ${W} ${H}`} className="strip-phone-svg">
+      {[...pts].map(([i, p]) => (
+        <polygon key={`h${i}`} points={hexPoints(p, R, false)} className={i >= lo && i <= hi ? 'hx-trip' : 'hx-rest'} />
+      ))}
+      {[...pts].map(([i, p]) =>
+        [i - 1, i + 1].map((j) => {
+          const q = pts.get(j) ?? (j >= 0 && j < lineStations.length ? { x: COL + (j % 2) * 1.5 * R, y: p.y + (j - i) * STEP } : null);
+          if (!q) return null;
+          const off = !pts.has(j);
+          return (
+            <line
+              key={`t${i}-${j}`}
+              x1={p.x}
+              y1={p.y}
+              x2={(p.x + q.x) / 2}
+              y2={(p.y + q.y) / 2}
+              className={off ? 'trk trk-more' : 'trk'}
+            />
+          );
+        })
+      )}
+      {[...pts].map(([i, p]) => {
+        const st = lineStations[i];
+        const isEnd = i === originIdx || i === destIdx;
+        const city = CITY_IDS.has(st.id) || isEnd;
+        const mins = circleMinutes(i);
+        return (
+          <g key={`s${i}`}>
+            {city ? (
+              <>
+                <circle cx={p.x} cy={p.y} r={11} className="city" />
+                {mins && (
+                  <text x={p.x} y={p.y + 3.5} textAnchor="middle" className="city-n">
+                    {mins}
+                  </text>
+                )}
+              </>
+            ) : (
+              <circle cx={p.x} cy={p.y} r={5} className="town" />
+            )}
+            <text x={LABEL_END} y={p.y + 4.5} textAnchor="end" className={`stn stn-p${isEnd ? ' end' : ''}`}>
+              <title>{st.name}</title>
+              {plainName(st)}
+            </text>
+            {isEnd && (
+              <g aria-hidden="true">
+                <rect x={2} y={p.y - 7} width={34} height={14} rx={2} className="end-tag" />
+                <text x={19} y={p.y + 3} textAnchor="middle" className="end-tag-t">
+                  {i === originIdx ? 'FROM' : 'TO'}
+                </text>
+              </g>
+            )}
+          </g>
+        );
+      })}
+      {shown.map(({ t, x, y }) => {
+        return (
+          <TokenGlyph
+            key={`tok-${t.label}`}
+            cx={x}
+            cy={y}
+            direction={t.direction}
+            horizontal={false}
+            mine={t.mine}
+            label={t.label}
+          />
+        );
+      })}
+    </svg>
+  );
+}
+
 interface StripProps extends LineStripProps {
-  horizontal: boolean;
   lo: number;
   hi: number;
   aria: string;
 }
 
-function Strip({ horizontal, lo, hi, originIdx, destIdx, tripMinutes, tokens, aria }: StripProps) {
-  const R = horizontal ? 40 : 25;
-  const pts: Pt[] = lineStations.map((_, i) => {
-    const zig = i % 2;
-    return horizontal
-      ? { x: 30 + i * ((S3 * R) / 2) + (S3 * R) / 2, y: 34 + zig * 1.5 * R + R }
-      : { x: 190 + zig * 1.5 * R, y: 30 + i * ((S3 * R) / 2) + R };
-  });
+function Strip({ lo, hi, originIdx, destIdx, tripMinutes, tokens, aria }: StripProps) {
+  const horizontal = false;
+  const R = 25;
+  const LANE = 190 + 1.5 * R + R + 18; // first token column, right of the hexes
+  const RIGHT_LABEL = LANE + 2 * 30 + 4; // right-hand names start past two token columns
+  const pts: Pt[] = lineStations.map((_, i) => ({ x: 190 + (i % 2) * 1.5 * R, y: 30 + i * ((S3 * R) / 2) + R }));
   const last = pts[pts.length - 1];
-  const W = horizontal ? Math.round(last.x + 60) : 600;
-  const H = horizontal ? 200 : Math.round(last.y + 50);
+  const W = 600;
+  const H = Math.round(last.y + 50);
 
   const faint: Pt[] = [];
   pts.forEach((p, i) => {
-    const off = horizontal
-      ? [[0, -3 * R], [0, 3 * R]]
-      : [[-3 * R, 0], [3 * R, 0], [4.5 * R, (i % 2 ? -1 : 1) * ((S3 * R) / 2)]];
+    const off = [[-3 * R, 0], [3 * R, 0], [4.5 * R, (i % 2 ? -1 : 1) * ((S3 * R) / 2)]];
     off.forEach(([dx, dy]) => faint.push({ x: p.x + dx, y: p.y + dy }));
   });
 
@@ -117,8 +243,6 @@ function Strip({ horizontal, lo, hi, originIdx, destIdx, tripMinutes, tokens, ar
       role="img"
       aria-label={aria}
       viewBox={`0 0 ${W} ${H}`}
-      width={horizontal ? W : undefined}
-      height={horizontal ? H : undefined}
     >
       {faint.map((c, k) => (
         <polygon key={`f${k}`} points={hexPoints(c, R, horizontal)} className="hx-faint" />
@@ -145,8 +269,7 @@ function Strip({ horizontal, lo, hi, originIdx, destIdx, tripMinutes, tokens, ar
         const isEnd = i === originIdx || i === destIdx;
         const city = CITY_IDS.has(st.id) || isEnd;
         const mins = circleMinutes(i);
-        const name = horizontal ? shortName(st) : plainName(st);
-        const above = i % 2 === 0;
+        const name = plainName(st);
         const left = i % 2 === 0;
         return (
           <g key={`s${i}`}>
@@ -162,25 +285,14 @@ function Strip({ horizontal, lo, hi, originIdx, destIdx, tripMinutes, tokens, ar
             ) : (
               <circle cx={p.x} cy={p.y} r={5} className="town" />
             )}
-            {horizontal ? (
-              <text
-                x={p.x}
-                y={above ? p.y - R - 8 : p.y + R + 16}
-                textAnchor="middle"
-                className={`stn stn-h${isEnd ? ' end' : ''}`}
-              >
-                {name}
-              </text>
-            ) : (
-              <text
-                x={left ? p.x - R - 10 : p.x + R + 10}
-                y={p.y + 4}
-                textAnchor={left ? 'end' : 'start'}
-                className={`stn${isEnd ? ' end' : ''}`}
-              >
-                {name}
-              </text>
-            )}
+            <text
+              x={left ? p.x - R - 10 : RIGHT_LABEL}
+              y={p.y + 4}
+              textAnchor={left ? 'end' : 'start'}
+              className={`stn${isEnd ? ' end' : ''}`}
+            >
+              {name}
+            </text>
           </g>
         );
       })}
@@ -191,37 +303,34 @@ function Strip({ horizontal, lo, hi, originIdx, destIdx, tripMinutes, tokens, ar
         ] as const
       ).map(([i, l]) => {
         const p = pts[i];
-        const y = horizontal ? p.y + (i % 2 ? -R - 24 : R + 22) : p.y + 15;
+        // Under the station name, on the label's side, clear of tokens.
+        const left = i % 2 === 0;
+        const x = left ? p.x - R - 10 - 34 : RIGHT_LABEL;
+        const y = p.y + 8;
         return (
           <g key={l} aria-hidden="true">
-            <rect x={p.x - 17} y={y} width={34} height={14} rx={2} className="end-tag" />
-            <text x={p.x} y={y + 10} textAnchor="middle" className="end-tag-t">
+            <rect x={x} y={y} width={34} height={14} rx={2} className="end-tag" />
+            <text x={x + 17} y={y + 10} textAnchor="middle" className="end-tag-t">
               {l}
             </text>
           </g>
         );
       })}
-      {tokens.map((t, k) => {
-        const p = pts[t.idx];
-        if (!p) return null;
-        // Several trains near one stop: fan their tokens out, away from the
-        // station label, so every train number stays readable.
-        const rank = tokens.slice(0, k).filter((o) => o.idx === t.idx).length;
-        const side = t.idx % 2 === 0 ? 1 : -1;
-        const cx = horizontal ? p.x + rank * 36 * side : p.x + side * (24 + rank * 30);
-        const cy = horizontal ? p.y + side * 26 : p.y;
-        return (
-          <TokenGlyph
-            key={`tok-${t.label}`}
-            cx={cx}
-            cy={cy}
-            direction={t.direction}
-            horizontal={horizontal}
-            mine={t.mine}
-            label={t.label}
-          />
-        );
-      })}
+      {placeTokens(
+        tokens.filter((t) => pts[t.idx]),
+        (t) => pts[t.idx].y,
+        LANE
+      ).map(({ t, x, y }) => (
+        <TokenGlyph
+          key={`tok-${t.label}`}
+          cx={x}
+          cy={y}
+          direction={t.direction}
+          horizontal={horizontal}
+          mine={t.mine}
+          label={t.label}
+        />
+      ))}
     </svg>
   );
 }

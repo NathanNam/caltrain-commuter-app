@@ -147,3 +147,39 @@ export function tokenPointer(cx: number, cy: number, direction: Direction, horiz
     ? `${cx + d * tip},${cy} ${cx + d * base},${cy - half} ${cx + d * base},${cy + half}`
     : `${cx},${cy + d * tip} ${cx - half},${cy + d * base} ${cx + half},${cy + d * base}`;
 }
+
+export interface LiveToken {
+  idx: number;
+  label: string;
+  direction: Direction;
+  /** One of the listed departures for the chosen route. */
+  mine: boolean;
+}
+
+/**
+ * Place live tokens in a lane beside the track: each token takes the first
+ * slot (left to right) where no token already placed is within `minDy`
+ * vertically, so tokens and their pointers never overlap each other, and the
+ * lane itself keeps them off the station circles. South before north at a
+ * station, so directions keep a consistent order.
+ */
+export function placeTokens<T extends LiveToken>(
+  tokens: T[],
+  yOf: (t: T) => number,
+  laneX: number,
+  step = 30,
+  minDy = 44
+): { t: T; x: number; y: number }[] {
+  const sorted = [...tokens].sort(
+    (a, b) => yOf(a) - yOf(b) || (a.direction === b.direction ? 0 : a.direction === 'Southbound' ? -1 : 1)
+  );
+  const placed: { t: T; x: number; y: number; slot: number }[] = [];
+  for (const t of sorted) {
+    const y = yOf(t);
+    let slot = 0;
+    while (placed.some((p) => p.slot === slot && Math.abs(p.y - y) < minDy)) slot++;
+    placed.push({ t, x: laneX + slot * step, y, slot });
+  }
+  return placed;
+}
+
