@@ -8,7 +8,7 @@ trains, the full schedule, weather and nearby events.
 Live: <https://caltrain-commuter.vercel.app>
 
 <p>
-  <img src="docs/images/phone-first-screen.png" alt="Phone, first screen: route, a black 10 MIN block with the next train's time, type and on-time status" width="260">
+  <img src="docs/images/phone-first-screen.png" alt="Phone, first screen: SF → San Mateo, a black minutes-to-go block with the next train's time, type, on-time status and live position" width="260">
   <img src="docs/images/phone-night-board.png" alt="The same screen on the night board: dark table, cream ink" width="260">
   <img src="docs/images/full-board-phone.png" alt="The full board on a phone: stations down the side, trains across, the next train highlighted" width="260">
 </p>
@@ -27,7 +27,10 @@ Live: <https://caltrain-commuter.vercel.app>
   to Gilroy: your trip in green, the rest in yellow, cities as white circles,
   stops as dots. Every train reporting a position is a token with its real
   number: red southbound, blue northbound, each pointing the way it is going;
-  trains on your route have a heavier rim. A text line lists them too.
+  trains on your route have a heavier rim, and tokens sit beside the track
+  so they never hide a station. On a phone it shows your trip plus two
+  stations each side, with "Show whole line" for all 31; trains outside the
+  view are counted ("+2 more trains on the line"). A text line lists them too.
 - **Full board.** The whole timetable for today, tomorrow or any of the next
   seven days: stations down the side, trains across, per direction, with your
   stops and the next train highlighted, PM times in bold and "↓" where a train
@@ -46,7 +49,7 @@ Live: <https://caltrain-commuter.vercel.app>
 
 <img src="docs/images/full-board-desktop.png" alt="Full board on desktop: Southbound, Sunday, every train with its times at every station" width="100%">
 
-<img src="docs/images/phone-full-page.png" alt="Phone, whole page" width="260">
+<img src="docs/images/phone-full-page.jpg" alt="Phone, whole page" width="260">
 
 ## Data sources
 
