@@ -158,6 +158,11 @@ body {
   margin-top: 2px;
 }
 
+.masthead-tools .btn {
+  white-space: nowrap;
+  padding: 8px 10px;
+}
+
 .masthead-tools {
   margin-left: auto;
   display: flex;
@@ -1063,6 +1068,177 @@ html.dark .tte-st.late {
   color: var(--ink);
   font-weight: 700;
   text-underline-offset: 3px;
+}
+
+/* ---------- full board (system timetable) ---------- */
+.fb-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.fb-controls .seg {
+  width: auto;
+  flex: 1 1 260px;
+}
+
+.fb-info {
+  margin-bottom: 6px;
+}
+
+.fb-now {
+  min-height: 34px;
+  padding: 4px 10px;
+  font-size: 12px;
+  margin-left: auto;
+}
+
+.fb-legend {
+  margin-bottom: 10px;
+}
+
+.fb-scroll {
+  /* positioned, so screen-reader-only text in cells is clipped by this scroller, not the page */
+  position: relative;
+  overflow: auto;
+  max-height: 78vh;
+  border: 3px solid var(--ink);
+  border-radius: 6px;
+  background: var(--card);
+  max-width: 100%;
+}
+
+.fb {
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+.fb th,
+.fb td {
+  padding: 3px 7px;
+  white-space: nowrap;
+  border-bottom: 1px solid var(--grid);
+  text-align: right;
+}
+
+.fb td {
+  border-left: 1px solid var(--grid);
+  min-width: 46px;
+}
+
+.fb td b {
+  font-weight: 800;
+}
+
+.fb thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--paper-2);
+  border-bottom: 2px solid var(--ink);
+  text-align: center;
+  vertical-align: bottom;
+}
+
+.fb-train {
+  border-top: 6px solid transparent;
+}
+.fb-train.local {
+  border-top-color: var(--co-lblue);
+}
+.fb-train.limited {
+  border-top-color: var(--co-orange);
+}
+.fb-train.express {
+  border-top-color: var(--co-red);
+}
+.fb-train.south-county {
+  border-top-color: var(--co-green);
+}
+
+.fb-num {
+  display: block;
+  font: 700 14px var(--font-slab), serif;
+  margin-bottom: 2px;
+}
+
+.fb tbody th {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  background: var(--card);
+  text-align: left;
+  font: 600 12.5px var(--font-sans), sans-serif;
+  border-right: 2px solid var(--ink);
+  max-width: 132px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.fb thead .fb-corner {
+  left: 0;
+  z-index: 3;
+  text-align: left;
+  border-right: 2px solid var(--ink);
+  font: 800 10px var(--font-sans), sans-serif;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: var(--ink-2);
+}
+
+.fb-pass {
+  color: var(--ink-2);
+}
+
+.fb tr.is-from th,
+.fb tr.is-to th,
+.fb tr.is-from td,
+.fb tr.is-to td {
+  background: color-mix(in srgb, var(--tile-green) 28%, var(--card));
+}
+
+.fb tr.is-from th,
+.fb tr.is-to th {
+  font-weight: 800;
+}
+
+.fb-mark {
+  margin-left: 6px;
+  font: 800 9px var(--font-sans), sans-serif;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  background: #1b1a17;
+  color: #f2e8cf;
+  border-radius: 2px;
+  padding: 1px 4px;
+}
+
+.fb th.is-next {
+  background: var(--tile-green);
+  color: #0d2a06;
+}
+
+.fb td.is-next {
+  background: color-mix(in srgb, var(--tile-green) 40%, var(--card));
+  box-shadow: inset 2px 0 0 #1b1a17, inset -2px 0 0 #1b1a17;
+}
+
+.fb td.is-past {
+  color: var(--ink-2);
+  opacity: 0.45;
+}
+
+@media (max-width: 520px) {
+  .fb tbody th {
+    max-width: 96px;
+    font-size: 11.5px;
+  }
+  .fb {
+    font-size: 12px;
+  }
 }
 
 /* ---------- certificates (weather, events) ---------- */

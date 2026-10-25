@@ -160,6 +160,17 @@ export default function CommuterBoard() {
     }))
     .sort((a, b) => a.idx - b.idx || Number(b.mine) - Number(a.mine));
 
+  const boardHref = (day?: string) => {
+    const q = new URLSearchParams();
+    if (hasRoute) {
+      q.set('from', originId);
+      q.set('to', destinationId);
+    }
+    if (day) q.set('day', day);
+    const qs = q.toString();
+    return `/board${qs ? `?${qs}` : ''}`;
+  };
+
   const tripStationIds = useMemo(() => {
     const lo = Math.min(originIdx, destIdx);
     const hi = Math.max(originIdx, destIdx);
@@ -180,6 +191,11 @@ export default function CommuterBoard() {
         </div>
         <div className="masthead-tools">
           <SampleDataNote sources={sampleSources} timetableEnd={timetableEnd} />
+          <a className="icon-btn" href={boardHref()} aria-label="Full board: every train, every station" title="Full board">
+            <svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M3 4h18v16H3zM3 9h18M3 14h18M9 4v16M15 4v16" fill="none" stroke="currentColor" strokeWidth="2" />
+            </svg>
+          </a>
           <ThemeToggle />
         </div>
       </header>
@@ -221,7 +237,7 @@ export default function CommuterBoard() {
               </section>
             )}
 
-            <Timetable originId={originId} destinationId={destinationId} today={today} now={now} />
+            <Timetable originId={originId} destinationId={destinationId} today={today} now={now} boardHref={boardHref} />
 
             <div className="certs">
               <WeatherWidget stationId={originId} which="Origin" onSampleChange={onWeatherA} />
