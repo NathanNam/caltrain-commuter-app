@@ -13,6 +13,8 @@ interface LineStripProps {
    * lineStations of the nearest stop, its real train number and direction).
    */
   tokens: LiveToken[];
+  /** Start with the whole line open on phones (tests and links). */
+  initialWhole?: boolean;
 }
 
 export type { LiveToken } from '@/lib/board';
@@ -39,10 +41,10 @@ function hexPoints(c: Pt, r: number, pointy: boolean): string {
  * Vertical everywhere: the full line on wide screens; on phones your trip plus
  * a few stations each side, with a toggle for the whole line.
  */
-export default function LineStrip({ originIdx, destIdx, tripMinutes, tokens }: LineStripProps) {
+export default function LineStrip({ originIdx, destIdx, tripMinutes, tokens, initialWhole = false }: LineStripProps) {
   const lo = Math.min(originIdx, destIdx);
   const hi = Math.max(originIdx, destIdx);
-  const [whole, setWhole] = useState(false);
+  const [whole, setWhole] = useState(initialWhole);
   const panelId = useId();
 
   const origin = lineStations[originIdx];
@@ -56,8 +58,7 @@ export default function LineStrip({ originIdx, destIdx, tripMinutes, tokens }: L
   }.${tokenText}`;
 
   // Phones: your trip plus a few stations each side, unless the whole line is open.
-  const first = whole ? 0 : Math.max(0, lo - PHONE_CONTEXT);
-  const last = whole ? lineStations.length - 1 : Math.min(lineStations.length - 1, hi + PHONE_CONTEXT);
+  const { first, last } = visibleRange(originIdx, destIdx, whole);
   const hidden = tokens.filter((t) => t.idx < first || t.idx > last).length;
 
   return (
@@ -98,6 +99,14 @@ export default function LineStrip({ originIdx, destIdx, tripMinutes, tokens }: L
 
 /** Stations shown on each side of the trip on phones before "Show whole line". */
 const PHONE_CONTEXT = 2;
+
+/** Station indexes shown on a phone: the trip plus PHONE_CONTEXT each side, or everything. */
+export function visibleRange(originIdx: number, destIdx: number, whole: boolean): { first: number; last: number } {
+  const lo = Math.min(originIdx, destIdx);
+  const hi = Math.max(originIdx, destIdx);
+  const n = lineStations.length;
+  return whole ? { first: 0, last: n - 1 } : { first: Math.max(0, lo - PHONE_CONTEXT), last: Math.min(n - 1, hi + PHONE_CONTEXT) };
+}
 
 interface PhoneStripProps extends LineStripProps {
   first: number;
@@ -140,7 +149,13 @@ function PhoneStrip({ first, last, lo, hi, originIdx, destIdx, tripMinutes, toke
   return (
     <svg id={id} role="img" aria-label={aria} viewBox={`0 0 ${W} ${H}`} className="strip-phone-svg">
       {[...pts].map(([i, p]) => (
-        <polygon key={`h${i}`} points={hexPoints(p, R, false)} className={i >= lo && i <= hi ? 'hx-trip' : 'hx-rest'} />
+        <polygon
+          key={`h${i}`}
+          data-station={i}
+          data-y={p.y}
+          points={hexPoints(p, R, false)}
+          className={i >= lo && i <= hi ? 'hx-trip' : 'hx-rest'}
+        />
       ))}
       {[...pts].map(([i, p]) =>
         [i - 1, i + 1].map((j) => {
@@ -168,7 +183,7 @@ function PhoneStrip({ first, last, lo, hi, originIdx, destIdx, tripMinutes, toke
           <g key={`s${i}`}>
             {city ? (
               <>
-                <circle cx={p.x} cy={p.y} r={11} className="city" />
+                <circle cx={p.x} cy={p.y} r={11} className="city" data-station={i} data-y={p.y} />
                 {mins && (
                   <text x={p.x} y={p.y + 3.5} textAnchor="middle" className="city-n">
                     {mins}
@@ -176,15 +191,22 @@ function PhoneStrip({ first, last, lo, hi, originIdx, destIdx, tripMinutes, toke
                 )}
               </>
             ) : (
-              <circle cx={p.x} cy={p.y} r={5} className="town" />
+              <circle cx={p.x} cy={p.y} r={5} className="town" data-station={i} data-y={p.y} />
             )}
-            <text x={LABEL_END} y={p.y + 4.5} textAnchor="end" className={`stn stn-p${isEnd ? ' end' : ''}`}>
+            <text
+              x={LABEL_END}
+              y={p.y + 4.5}
+              data-station={i}
+              data-y={p.y}
+              textAnchor="end"
+              className={`stn stn-p${isEnd ? ' end' : ''}`}
+            >
               <title>{st.name}</title>
               {plainName(st)}
             </text>
             {isEnd && (
               <g aria-hidden="true">
-                <rect x={2} y={p.y - 7} width={34} height={14} rx={2} className="end-tag" />
+                <rect x={2} y={p.y - 7} width={34} height={14} rx={2} className="end-tag" data-station={i} data-y={p.y} data-end={i === originIdx ? 'from' : 'to'} />
                 <text x={19} y={p.y + 3} textAnchor="middle" className="end-tag-t">
                   {i === originIdx ? 'FROM' : 'TO'}
                 </text>
@@ -197,6 +219,7 @@ function PhoneStrip({ first, last, lo, hi, originIdx, destIdx, tripMinutes, toke
         return (
           <TokenGlyph
             key={`tok-${t.label}`}
+            station={t.idx}
             cx={x}
             cy={y}
             direction={t.direction}
@@ -251,6 +274,8 @@ function Strip({ lo, hi, originIdx, destIdx, tripMinutes, tokens, aria }: StripP
         <polygon
           key={`h${i}`}
           points={hexPoints(p, R, horizontal)}
+          data-station={i}
+          data-y={p.y}
           className={i >= lo && i <= hi ? 'hx-trip' : 'hx-rest'}
         />
       ))}
@@ -275,7 +300,7 @@ function Strip({ lo, hi, originIdx, destIdx, tripMinutes, tokens, aria }: StripP
           <g key={`s${i}`}>
             {city ? (
               <>
-                <circle cx={p.x} cy={p.y} r={11} className="city" />
+                <circle cx={p.x} cy={p.y} r={11} className="city" data-station={i} data-y={p.y} />
                 {mins && (
                   <text x={p.x} y={p.y + 3.5} textAnchor="middle" className="city-n">
                     {mins}
@@ -283,12 +308,14 @@ function Strip({ lo, hi, originIdx, destIdx, tripMinutes, tokens, aria }: StripP
                 )}
               </>
             ) : (
-              <circle cx={p.x} cy={p.y} r={5} className="town" />
+              <circle cx={p.x} cy={p.y} r={5} className="town" data-station={i} data-y={p.y} />
             )}
             <text
               x={left ? p.x - R - 10 : RIGHT_LABEL}
               y={p.y + 4}
               textAnchor={left ? 'end' : 'start'}
+              data-station={i}
+              data-y={p.y}
               className={`stn${isEnd ? ' end' : ''}`}
             >
               {name}
@@ -323,6 +350,7 @@ function Strip({ lo, hi, originIdx, destIdx, tripMinutes, tokens, aria }: StripP
       ).map(({ t, x, y }) => (
         <TokenGlyph
           key={`tok-${t.label}`}
+          station={t.idx}
           cx={x}
           cy={y}
           direction={t.direction}
@@ -343,8 +371,10 @@ export function TokenGlyph({
   horizontal,
   mine,
   label,
+  station,
   r = 12,
 }: {
+  station?: number;
   cx: number;
   cy: number;
   direction: Direction;
@@ -355,7 +385,7 @@ export function TokenGlyph({
 }) {
   const style = TOKEN_STYLE[direction];
   return (
-    <g aria-hidden="true" data-direction={direction}>
+    <g aria-hidden="true" data-direction={direction} data-station={station} data-y={cy} data-token={label}>
       <polygon points={tokenPointer(cx, cy, direction, horizontal, r)} className="train-tip" />
       <circle cx={cx} cy={cy} r={r} fill={style.fill} stroke="#1b1a17" strokeWidth={tokenRim(mine)} className="train-tok" />
       {label && (
