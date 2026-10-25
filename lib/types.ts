@@ -8,7 +8,25 @@ export interface Station {
     lat: number;
     lng: number;
   };
+  /** GTFS stop_ids of the station's platforms (both directions). */
+  gtfsStopIds: string[];
+  /** Limited service, e.g. "weekends only". */
+  serviceNote?: string;
 }
+
+/** A train currently reporting a position anywhere on the line. */
+export interface LiveTrain {
+  trainNumber: string;
+  direction: 'Northbound' | 'Southbound';
+  type: TrainType;
+  latitude: number;
+  longitude: number;
+  currentStatus?: 'INCOMING_AT' | 'STOPPED_AT' | 'IN_TRANSIT_TO';
+  /** True when this train is one of the listed departures for the chosen route. */
+  onRoute: boolean;
+}
+
+export type TrainType = 'Local' | 'Limited' | 'Express' | 'South County';
 
 export interface Train {
   trainNumber: string;
@@ -17,8 +35,12 @@ export interface Train {
   departureTime: string;
   arrivalTime: string;
   duration: number; // in minutes
-  type: 'Local' | 'Limited' | 'Express';
-  delay?: number; // delay in minutes (positive = late, negative = early)
+  type: TrainType;
+  /** GTFS service date (YYYYMMDD) the trip runs on; after midnight this can be yesterday. */
+  serviceDate?: string;
+  /** Delay at the rider's origin stop in minutes (positive = late, negative = early). Only set from live data. */
+  delay?: number;
+  /** Only set from live data; undefined means "as scheduled, no live prediction". */
   status?: 'on-time' | 'delayed' | 'cancelled';
   // Live vehicle position data from GTFS-RT
   vehiclePosition?: {
