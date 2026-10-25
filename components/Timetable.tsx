@@ -31,6 +31,8 @@ interface TimetableProps {
 }
 
 const OPEN_KEY = 'caltrain_timetable_open';
+// Caltrain's own schedules page (linked from caltrain.com's navigation).
+const CALTRAIN_TIMETABLE_URL = 'https://www.caltrain.com/schedules/pdfs';
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const SHORT_TYPE: Record<TrainType, string> = { Local: 'Local', Limited: 'Ltd', Express: 'Exp', 'South County': 'S. Cty' };
 
@@ -232,11 +234,13 @@ export default function Timetable({ originId, destinationId, today, now, boardHr
           <p className="hint">No trains run between these stations on {dayLabel(date)}.</p>
         ))}
 
-      {boardHref && (
-        <p className="tt-links">
-          <a href={boardHref(date)}>Full board: every train, every station &rarr;</a>
-        </p>
-      )}
+      <p className="tt-links">
+        {boardHref && <a href={boardHref(date)}>Full board: every train, every station &rarr;</a>}
+        <a href={CALTRAIN_TIMETABLE_URL} target="_blank" rel="noopener">
+          Full Caltrain timetable <span aria-hidden="true">&#8599;</span>
+          <span className="sr-only"> (caltrain.com, opens in a new tab)</span>
+        </a>
+      </p>
     </section>
   );
 }
