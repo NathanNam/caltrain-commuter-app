@@ -206,10 +206,62 @@ export interface ScheduledTrain extends Train {
   originSequence: number;
 }
 
+export type { ServiceDate } from './service-day';
+import type { ServiceDate } from './service-day';
+
+/** Start of a GTFS service day: "noon minus 12 h" Pacific (midnight, except on DST days). */
+export function serviceDayStartMs(d: ServiceDate): number {
+  return pacificToUtc(d.year, d.month, d.day, 12).getTime() - 12 * 3600 * 1000;
+}
+
+/** All trips from origin to destination on one service day, as absolute times, sorted. */
+export function tripsOnServiceDay(
+  feed: GtfsFeed,
+  origin: Station,
+  destination: Station,
+  date: ServiceDate
+): ScheduledTrain[] {
+  const originStops = new Set(origin.gtfsStopIds);
+  const destStops = new Set(destination.gtfsStopIds);
+  const southbound =
+    stations.findIndex((s) => s.id === origin.id) < stations.findIndex((s) => s.id === destination.id);
+  const dateStr = yyyymmdd(date.year, date.month, date.day);
+  const weekday = new Date(Date.UTC(date.year, date.month - 1, date.day)).getUTCDay();
+  const services = servicesOn(feed, dateStr, weekday);
+  const dayStartMs = serviceDayStartMs(date);
+  const result: ScheduledTrain[] = [];
+  if (services.size === 0) return result;
+
+  for (const trip of feed.trips) {
+    if (!services.has(trip.serviceId)) continue;
+    const stops = feed.stopTimesByTrip.get(trip.tripId);
+    if (!stops) continue;
+    const from = stops.find((st) => originStops.has(st.stopId));
+    const to = stops.find((st) => destStops.has(st.stopId));
+    if (!from || !to || from.sequence >= to.sequence) continue;
+
+    const depMs = dayStartMs + from.departureSecs * 1000;
+    const arrMs = dayStartMs + to.arrivalSecs * 1000;
+    result.push({
+      trainNumber: trip.shortName,
+      tripId: trip.tripId,
+      serviceDate: dateStr,
+      originStopId: from.stopId,
+      originSequence: from.sequence,
+      direction: southbound ? 'Southbound' : 'Northbound',
+      departureTime: new Date(depMs).toISOString(),
+      arrivalTime: new Date(arrMs).toISOString(),
+      duration: Math.round((arrMs - depMs) / 60000),
+      type: trainTypeFromRoute(trip.routeId, feed.routeNames),
+    });
+  }
+  return result.sort((a, b) => a.departureTime.localeCompare(b.departureTime));
+}
+
 /**
- * Trips between two stations from the given service days, as absolute times.
- * Includes yesterday's service day so trips running past midnight (GTFS times
- * of 24:00 and later) are found between midnight and the end of service.
+ * Trips between two stations around now, as absolute times. Searches
+ * yesterday's service day (trips with GTFS times of 24:00 and later run
+ * between midnight and the end of service), today's and tomorrow's.
  */
 export function findTrips(
   feed: GtfsFeed,
@@ -218,48 +270,13 @@ export function findTrips(
   now: Date,
   windowStartMs: number
 ): ScheduledTrain[] {
-  const originStops = new Set(origin.gtfsStopIds);
-  const destStops = new Set(destination.gtfsStopIds);
-  const southbound =
-    stations.findIndex((s) => s.id === origin.id) < stations.findIndex((s) => s.id === destination.id);
-
   const today = pacificParts(now);
   const result: ScheduledTrain[] = [];
-
   for (const offset of [-1, 0, 1]) {
     const d = addDays(today.year, today.month, today.day, offset);
-    const dateStr = yyyymmdd(d.year, d.month, d.day);
-    const services = servicesOn(feed, dateStr, d.weekday);
-    if (services.size === 0) continue;
-    // GTFS times count from "noon minus 12 h" of the service day (midnight, except on DST days).
-    const dayStartMs = pacificToUtc(d.year, d.month, d.day, 12).getTime() - 12 * 3600 * 1000;
-
-    for (const trip of feed.trips) {
-      if (!services.has(trip.serviceId)) continue;
-      const stops = feed.stopTimesByTrip.get(trip.tripId);
-      if (!stops) continue;
-      const from = stops.find((st) => originStops.has(st.stopId));
-      const to = stops.find((st) => destStops.has(st.stopId));
-      if (!from || !to || from.sequence >= to.sequence) continue;
-
-      const depMs = dayStartMs + from.departureSecs * 1000;
-      const arrMs = dayStartMs + to.arrivalSecs * 1000;
-      if (depMs < windowStartMs) continue;
-
-      result.push({
-        trainNumber: trip.shortName,
-        tripId: trip.tripId,
-        serviceDate: dateStr,
-        originStopId: from.stopId,
-        originSequence: from.sequence,
-        direction: southbound ? 'Southbound' : 'Northbound',
-        departureTime: new Date(depMs).toISOString(),
-        arrivalTime: new Date(arrMs).toISOString(),
-        duration: Math.round((arrMs - depMs) / 60000),
-        type: trainTypeFromRoute(trip.routeId, feed.routeNames),
-      });
+    for (const t of tripsOnServiceDay(feed, origin, destination, d)) {
+      if (new Date(t.departureTime).getTime() >= windowStartMs) result.push(t);
     }
   }
-
   return result.sort((a, b) => a.departureTime.localeCompare(b.departureTime));
 }

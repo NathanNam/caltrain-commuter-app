@@ -765,6 +765,176 @@ body {
   }
 }
 
+/* ---------- route timetable (printed-timetable grid) ---------- */
+.ttbox {
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.tt-days {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.tt-day,
+.tt-more select {
+  min-height: 40px;
+  border: 2px solid var(--ink);
+  border-radius: 4px;
+  background: var(--badge-bg);
+  color: var(--ink);
+  font: 700 13px var(--font-sans), sans-serif;
+  padding: 6px 12px;
+  cursor: pointer;
+}
+
+.tt-day.on {
+  background: var(--ink);
+  color: var(--on-ink);
+}
+
+.tt-sched {
+  margin: 0;
+  font-size: 13px;
+  color: var(--ink-2);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  align-items: center;
+}
+
+.tt-sched strong {
+  color: var(--ink);
+}
+
+.tt-exc {
+  font: 800 11px var(--font-sans), sans-serif;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  border: 2px solid var(--ink);
+  border-radius: 3px;
+  padding: 0 6px;
+  background: var(--tile-yellow);
+  color: var(--on-tile);
+}
+
+.tt-toggle {
+  align-self: flex-start;
+}
+
+.tt-none {
+  font: 700 17px var(--font-slab), serif;
+  margin: 4px 0 6px;
+}
+
+.tt {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  table-layout: auto;
+}
+
+.tt th {
+  font: 800 10px var(--font-sans), sans-serif;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: var(--ink-2);
+  text-align: left;
+  border-bottom: 2px solid var(--ink);
+  padding: 4px 4px 4px 0;
+}
+
+.tt td {
+  border-bottom: 1px solid var(--grid);
+  padding: 5px 4px 5px 0;
+  white-space: nowrap;
+}
+
+.tt td:first-child {
+  font: 700 14px var(--font-slab), serif;
+}
+
+.tt tr.is-next td {
+  background: var(--tile-green);
+  color: #0d2a06;
+}
+
+.tt tr.is-next td:first-child {
+  box-shadow: inset 4px 0 0 #1b1a17;
+  padding-left: 6px;
+}
+
+.tt tr.is-cancelled td:not(:last-child) {
+  text-decoration: line-through;
+  opacity: 0.65;
+}
+
+.charter.tt-type {
+  font-size: 11px;
+  padding: 0 5px 0 1px;
+  gap: 4px;
+  border-width: 1.5px;
+}
+
+.charter.tt-type i {
+  width: 11px;
+  height: 11px;
+  border-width: 1.5px;
+}
+
+.tt-status {
+  font-size: 12px;
+  font-weight: 700;
+}
+.tt-status.late {
+  color: #7a5a00;
+}
+.tt-status.verylate,
+.tt-status.cancel {
+  color: var(--co-red);
+}
+.tt-status.sched {
+  color: var(--ink-2);
+  font-weight: 600;
+}
+html.dark .tt-status.late {
+  color: var(--tile-yellow);
+}
+.tt tr.is-next .tt-status {
+  color: #0d2a06;
+}
+
+@media (max-width: 420px) {
+  .tt {
+    font-size: 12px;
+  }
+  .tt td:first-child {
+    font-size: 13px;
+  }
+  .tt th,
+  .tt td {
+    padding-right: 3px;
+  }
+}
+
+.tt-links {
+  margin: 0;
+  font-size: 13px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+}
+
+.tt-links a {
+  color: var(--ink);
+  font-weight: 700;
+  text-underline-offset: 3px;
+}
+
 /* ---------- certificates (weather, events) ---------- */
 .certs {
   display: grid;
