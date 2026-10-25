@@ -93,6 +93,22 @@ export function nearestLineStation(lat: number, lng: number): number {
 }
 
 // ---------- remembered route ----------
+
+/**
+ * Shown to visitors who have no route in the link and none saved. It is
+ * never written to the URL or localStorage until they choose a route, so a
+ * later change of default reaches everyone who never picked one.
+ */
+export const DEFAULT_ROUTE = { from: 'sf', to: 'sm' } as const;
+
+/** Route precedence: the link, then the remembered route, then the default. */
+export function initialRoute(
+  fromUrl: { from: string; to: string } | null,
+  saved: { from: string; to: string } | null
+): { from: string; to: string; isDefault: boolean } {
+  const r = fromUrl ?? saved;
+  return r ? { ...r, isDefault: false } : { ...DEFAULT_ROUTE, isDefault: true };
+}
 const LAST_ROUTE_KEY = 'caltrain_last_route';
 
 export function loadLastRoute(): { from: string; to: string } | null {

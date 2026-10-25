@@ -36,8 +36,10 @@ Live: <https://caltrain-commuter.vercel.app>
   Warriors, Valkyries, 49ers, Sharks, Moscone conventions, concerts), shown as
   double-bordered "certificates".
 - **Service alerts** from 511 in one collapsible bar.
-- Your route is remembered on the device and kept in the address
-  (`?from=sf&to=pa`), so links work. Saved routes live in the route picker.
+- A first visit opens straight on **San Francisco (4th & King) → San Mateo**.
+  Once you pick a route it is remembered on the device and kept in the address
+  (`?from=sf&to=pa`), so links work; a link beats the remembered route, which
+  beats the default. Saved routes live in the route picker.
 - A **night board** keeps the 1830 look on a dark table.
 - When something is not live (no key, feed down, timetable out of date) one
   quiet note in the header says so; nothing is invented.

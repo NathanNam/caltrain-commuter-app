@@ -3,7 +3,7 @@
 import { useEffect, useId, useState } from 'react';
 import { SavedRoute } from '@/lib/types';
 import { getStationById } from '@/lib/stations';
-import { lineStations, plainName } from '@/lib/board';
+import { lineStations, plainName, shortName } from '@/lib/board';
 
 interface RoutePickerProps {
   originId: string;
@@ -11,6 +11,8 @@ interface RoutePickerProps {
   onChange: (originId: string, destinationId: string) => void;
   /** Start with the picker open (no route chosen yet). */
   forceOpen?: boolean;
+  /** The route is the built-in default, not one the visitor chose. */
+  isDefault?: boolean;
 }
 
 const STORAGE_KEY = 'caltrain_saved_routes';
@@ -53,7 +55,7 @@ function SwapIcon() {
  * Compact route control: the current stations as one button (tap to change),
  * a swap button, and a fold-out panel with the station pickers and saved routes.
  */
-export default function RoutePicker({ originId, destinationId, onChange, forceOpen }: RoutePickerProps) {
+export default function RoutePicker({ originId, destinationId, onChange, forceOpen, isDefault }: RoutePickerProps) {
   const [open, setOpen] = useState(false);
   const [draftFrom, setDraftFrom] = useState(originId);
   const [draftTo, setDraftTo] = useState(destinationId);
@@ -124,7 +126,11 @@ export default function RoutePicker({ originId, destinationId, onChange, forceOp
               {plainName(origin)} &rarr; {plainName(destination)}
             </span>
             <span className="meta">
-              {direction} &middot; {isOpen ? 'close' : 'tap to change route'}
+              {isOpen
+                ? `${direction} · close`
+                : isDefault
+                  ? `Showing ${shortName(origin)} → ${plainName(destination)} · tap to change`
+                  : `${direction} · tap to change route`}
             </span>
           </button>
           <button
