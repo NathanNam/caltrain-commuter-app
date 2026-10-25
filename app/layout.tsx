@@ -15,9 +15,36 @@ const sans = Inter({
   display: 'swap',
 })
 
+const SITE_URL = 'https://caltrain-commuter.vercel.app'
+const TITLE = 'Caltrain Commuter'
+const DESCRIPTION =
+  'Your next Caltrain, at a glance: live departures from 511, the line as an 1830-style hex map, weather and events.'
+
 export const metadata: Metadata = {
-  title: 'Caltrain Commuter - Train Schedules & Weather',
-  description: 'Real-time Caltrain schedules and weather information for your commute',
+  metadataBase: new URL(SITE_URL),
+  title: TITLE,
+  description: DESCRIPTION,
+  openGraph: {
+    title: TITLE,
+    description: DESCRIPTION,
+    url: SITE_URL,
+    siteName: TITLE,
+    type: 'website',
+    images: [
+      {
+        url: '/og-image.png',
+        width: 1200,
+        height: 630,
+        alt: 'Caltrain Commuter: a red CT token, an 8 MIN next-train block and a green hex strip of the line with a live train token',
+      },
+    ],
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title: TITLE,
+    description: DESCRIPTION,
+    images: ['/og-image.png'],
+  },
 }
 
 export const viewport: Viewport = {
