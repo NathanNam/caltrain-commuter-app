@@ -4,12 +4,21 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { LiveTrain, Train } from '@/lib/types';
 import { getStationById } from '@/lib/stations';
 import { formatTime } from '@/lib/utils';
-import { isLineStation, lineStations, loadLastRoute, nearestLineStation, plainName, saveLastRoute } from '@/lib/board';
+import {
+  TOKEN_STYLE,
+  isLineStation,
+  lineStations,
+  loadLastRoute,
+  nearestLineStation,
+  plainName,
+  saveLastRoute,
+  tokenRim,
+} from '@/lib/board';
 import RoutePicker from './RoutePicker';
 import ServiceAlerts from './ServiceAlerts';
 import WeatherWidget from './WeatherWidget';
 import VenueEvents from './VenueEvents';
-import LineStrip, { LiveToken } from './LineStrip';
+import LineStrip, { LiveToken, TokenGlyph } from './LineStrip';
 import ThemeToggle from './ThemeToggle';
 import SampleDataNote, { SampleSource } from './SampleDataNote';
 import { DepartureList, NextTrainHero } from './Departures';
@@ -243,17 +252,19 @@ export default function CommuterBoard() {
                   </svg>
                   Stop
                 </span>
+                {(['Southbound', 'Northbound'] as const).map((dir) => (
+                  <span key={dir}>
+                    <svg width="34" height="22" viewBox="0 0 34 22" aria-hidden="true">
+                      <TokenGlyph cx={dir === 'Southbound' ? 11 : 23} cy={11} r={8} direction={dir} horizontal mine={false} />
+                    </svg>
+                    {TOKEN_STYLE[dir].name}
+                  </span>
+                ))}
                 <span>
-                  <svg width="16" height="16" aria-hidden="true">
-                    <circle cx="8" cy="8" r="7" fill="var(--co-red)" stroke="#1b1a17" strokeWidth="1.5" />
+                  <svg width="22" height="22" viewBox="0 0 22 22" aria-hidden="true">
+                    <circle cx="11" cy="11" r="8" fill="none" stroke="currentColor" strokeWidth={tokenRim(true)} />
                   </svg>
-                  Southbound train
-                </span>
-                <span>
-                  <svg width="16" height="16" aria-hidden="true">
-                    <circle cx="8" cy="8" r="7" fill="var(--co-blue)" stroke="#1b1a17" strokeWidth="1.5" />
-                  </svg>
-                  Northbound train
+                  Heavy rim: on your route
                 </span>
               </div>
               <p className="live-list">

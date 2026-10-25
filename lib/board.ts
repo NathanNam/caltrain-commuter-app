@@ -115,3 +115,34 @@ export function saveLastRoute(from: string, to: string): void {
     // storage blocked: the URL still carries the route
   }
 }
+
+// ---------- live train tokens (shared by the hex strip and its legend) ----------
+export type Direction = 'Northbound' | 'Southbound';
+
+export interface TokenStyle {
+  fill: string;
+  /** +1 points south (down / right on the strip), -1 points north. */
+  pointer: 1 | -1;
+  name: string;
+}
+
+export const TOKEN_STYLE: Record<Direction, TokenStyle> = {
+  Southbound: { fill: 'var(--co-red)', pointer: 1, name: 'Southbound train' },
+  Northbound: { fill: 'var(--co-blue)', pointer: -1, name: 'Northbound train' },
+};
+
+/** Rim width: trains on the rider's route get a heavier rim. */
+export function tokenRim(mine: boolean): number {
+  return mine ? 3.5 : 2;
+}
+
+/** Pointer triangle for a token at (cx, cy), radius r, in its direction of travel. */
+export function tokenPointer(cx: number, cy: number, direction: Direction, horizontal: boolean, r = 12): string {
+  const d = TOKEN_STYLE[direction].pointer;
+  const tip = r + 9;
+  const base = r - 3;
+  const half = 8;
+  return horizontal
+    ? `${cx + d * tip},${cy} ${cx + d * base},${cy - half} ${cx + d * base},${cy + half}`
+    : `${cx},${cy + d * tip} ${cx - half},${cy + d * base} ${cx + half},${cy + d * base}`;
+}

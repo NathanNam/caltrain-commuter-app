@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef } from 'react';
-import { CITY_IDS, lineStations, plainName, shortName } from '@/lib/board';
+import { CITY_IDS, Direction, TOKEN_STYLE, lineStations, plainName, shortName, tokenPointer, tokenRim } from '@/lib/board';
 
 interface LineStripProps {
   originIdx: number;
@@ -208,25 +208,52 @@ function Strip({ horizontal, lo, hi, originIdx, destIdx, tripMinutes, tokens, ar
         // station label, so every train number stays readable.
         const rank = tokens.slice(0, k).filter((o) => o.idx === t.idx).length;
         const side = t.idx % 2 === 0 ? 1 : -1;
-        const cx = horizontal ? p.x + rank * 30 * side : p.x + side * (24 + rank * 30);
+        const cx = horizontal ? p.x + rank * 36 * side : p.x + side * (24 + rank * 30);
         const cy = horizontal ? p.y + side * 26 : p.y;
-        const south = t.direction === 'Southbound';
-        // Pointer in the direction of travel: down the page (vertical strip)
-        // or to the right (horizontal strip) is southbound.
-        const d = south ? 1 : -1;
-        const tip = horizontal
-          ? `${cx + d * 21},${cy} ${cx + d * 9},${cy - 8} ${cx + d * 9},${cy + 8}`
-          : `${cx},${cy + d * 21} ${cx - 8},${cy + d * 9} ${cx + 8},${cy + d * 9}`;
         return (
-          <g key={`tok-${t.label}`} aria-hidden="true">
-            <polygon points={tip} className={`train-tip ${south ? 'sb' : 'nb'}`} />
-            <circle cx={cx} cy={cy} r={12} className={`train-tok ${south ? 'sb' : 'nb'}${t.mine ? ' mine' : ''}`} />
-            <text x={cx} y={cy + 3.5} textAnchor="middle" className="train-tok-t">
-              {t.label.slice(0, 4)}
-            </text>
-          </g>
+          <TokenGlyph
+            key={`tok-${t.label}`}
+            cx={cx}
+            cy={cy}
+            direction={t.direction}
+            horizontal={horizontal}
+            mine={t.mine}
+            label={t.label}
+          />
         );
       })}
     </svg>
+  );
+}
+
+/** One live train token: direction colour, pointer toward travel, rim weight for "your route". Used by the legend too. */
+export function TokenGlyph({
+  cx,
+  cy,
+  direction,
+  horizontal,
+  mine,
+  label,
+  r = 12,
+}: {
+  cx: number;
+  cy: number;
+  direction: Direction;
+  horizontal: boolean;
+  mine: boolean;
+  label?: string;
+  r?: number;
+}) {
+  const style = TOKEN_STYLE[direction];
+  return (
+    <g aria-hidden="true" data-direction={direction}>
+      <polygon points={tokenPointer(cx, cy, direction, horizontal, r)} className="train-tip" />
+      <circle cx={cx} cy={cy} r={r} fill={style.fill} stroke="#1b1a17" strokeWidth={tokenRim(mine)} className="train-tok" />
+      {label && (
+        <text x={cx} y={cy + 3.5} textAnchor="middle" className="train-tok-t">
+          {label.slice(0, 4)}
+        </text>
+      )}
+    </g>
   );
 }

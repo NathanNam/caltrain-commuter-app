@@ -1108,17 +1108,6 @@ body {
   font: 800 9px var(--font-sans), sans-serif;
   letter-spacing: 1px;
 }
-.train-tok {
-  fill: var(--co-red);
-  stroke: #1b1a17;
-  stroke-width: 2;
-}
-.train-tok.nb {
-  fill: var(--co-blue);
-}
-.train-tok.mine {
-  stroke-width: 3.5;
-}
 .train-tip {
   fill: #1b1a17;
 }
