@@ -1,31 +1,11 @@
 // Service-day helpers for the route timetable and the full system board.
 import { GtfsFeed, ServiceDate, servicesOn, serviceDayStartMs, trainTypeFromRoute } from './gtfs-static';
 import { isoDate, yyyymmdd } from './pacific-time';
-import { serviceDayEndMs, WEEKDAY_NAMES } from './service-day';
+import { WEEKDAY_NAMES } from './service-day';
 
 export { currentServiceDate, parseIsoDate, serviceDayEndMs } from './service-day';
 import { stations } from './stations';
 import { TrainType } from './types';
-
-/**
- * Split trips (sorted by departure) into the rest of the current service
- * day and the next service day's first departures.
- */
-export function restOfServiceDay<T extends { departureTime: string }>(
-  trips: T[],
-  now: Date,
-  expectedDepartureMs: (t: T) => number = (t) => new Date(t.departureTime).getTime(),
-  nextDayCount = 3
-): { remaining: T[]; nextDay: T[]; endMs: number } {
-  const endMs = serviceDayEndMs(now);
-  const nowMs = now.getTime();
-  const remaining = trips.filter((t) => {
-    const dep = new Date(t.departureTime).getTime();
-    return dep < endMs && expectedDepartureMs(t) >= nowMs;
-  });
-  const nextDay = trips.filter((t) => new Date(t.departureTime).getTime() >= endMs).slice(0, nextDayCount);
-  return { remaining, nextDay, endMs };
-}
 
 export interface ServiceDayInfo {
   date: string; // YYYY-MM-DD

@@ -3,8 +3,6 @@ import { LiveTrain, Train } from '@/lib/types';
 import { getStationById } from '@/lib/stations';
 import { findTripUpdate, findVehicle, getRealtimeSnapshot, getStopDelay } from '@/lib/gtfs-realtime';
 import { findTrips, getFeed, isFeedExpired, trainTypeFromRoute } from '@/lib/gtfs-static';
-import { currentServiceDate, describeServiceDay, restOfServiceDay } from '@/lib/timetable';
-import { addDays } from '@/lib/pacific-time';
 
 const MAX_TRAINS = 5;
 // Look back far enough to keep a late train that is still due to leave.
@@ -75,10 +73,6 @@ export async function GET(request: NextRequest) {
   const upcoming = withLive.filter((t) => expectedDep(t) >= now.getTime());
   const trains = upcoming.slice(0, MAX_TRAINS);
 
-  // The rest of the current service day (until 3 AM), and the next day's first trains.
-  const { remaining, nextDay } = restOfServiceDay(withLive, now, expectedDep);
-  const today = currentServiceDate(now);
-  const tomorrow = addDays(today.year, today.month, today.day, 1);
 
   // Every train reporting a position on the line, named by its GTFS-RT
   // trip_id -> trips.txt trip_short_name (never by position or order).
@@ -102,11 +96,6 @@ export async function GET(request: NextRequest) {
     {
       trains,
       liveTrains,
-      today: {
-        info: describeServiceDay(feed, today),
-        remaining,
-        nextDay: { info: describeServiceDay(feed, tomorrow), trains: nextDay },
-      },
       realtime: {
         available: realtime.available,
         fetchedAt: new Date(realtime.fetchedAt).toISOString(),

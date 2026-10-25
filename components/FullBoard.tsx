@@ -6,7 +6,7 @@ import { TrainType } from '@/lib/types';
 import { isLineStation, plainName } from '@/lib/board';
 import { parseIsoDate } from '@/lib/service-day';
 import ThemeToggle from './ThemeToggle';
-import { TYPE_TAG, dayLabel, upcomingServiceDates } from './Timetable';
+import { CALTRAIN_TIMETABLE_URL, TYPE_TAG, dayLabel, upcomingServiceDates } from '@/lib/schedule-ui';
 
 type Cell = number | 'pass' | null;
 interface BoardTrain {
@@ -206,6 +206,10 @@ export default function FullBoard() {
         {data && <span>{data.info.label}</span>}
         {data?.info.exception && <span className="tt-exc">{data.info.exception}</span>}
         {data && <span>{trains.length} trains</span>}
+        <a className="fb-official" href={CALTRAIN_TIMETABLE_URL} target="_blank" rel="noopener">
+          Full Caltrain timetable <span aria-hidden="true">&#8599;</span>
+          <span className="sr-only"> (caltrain.com, opens in a new tab)</span>
+        </a>
         {isToday && nextNumber && (
           <button type="button" className="btn fb-now" onClick={jumpToNow}>
             Jump to now
@@ -264,8 +268,8 @@ export default function FullBoard() {
                 return (
                   <tr key={st.id} className={mark ? `is-${mark}` : undefined}>
                     <th scope="row">
-                      {plainName(st)}
                       {mark && <span className="fb-mark">{mark === 'from' ? 'From' : 'To'}</span>}
+                      {plainName(st)}
                     </th>
                     {trains.map((t) => {
                       const c = t.cells[si];
@@ -293,7 +297,7 @@ export default function FullBoard() {
 
       <footer className="foot">
         Built from Caltrain&rsquo;s GTFS timetable (via 511.org); static schedule, no live data.{' '}
-        <a href="https://www.caltrain.com/schedules/pdfs" target="_blank" rel="noopener">
+        <a href={CALTRAIN_TIMETABLE_URL} target="_blank" rel="noopener">
           Official Caltrain timetables <span aria-hidden="true">&#8599;</span>
           <span className="sr-only"> (opens in a new tab)</span>
         </a>

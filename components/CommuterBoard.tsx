@@ -22,7 +22,7 @@ import LineStrip, { LiveToken, TokenGlyph } from './LineStrip';
 import ThemeToggle from './ThemeToggle';
 import SampleDataNote, { SampleSource } from './SampleDataNote';
 import { DepartureList, NextTrainHero } from './Departures';
-import Timetable, { TodayData } from './Timetable';
+import { upcomingServiceDates } from '@/lib/schedule-ui';
 
 type Flags = Partial<Record<SampleSource | 'weatherA' | 'weatherB', boolean>>;
 
@@ -62,7 +62,6 @@ export default function CommuterBoard() {
   const [liveFeed, setLiveFeed] = useState(false);
   const [timetableEnd, setTimetableEnd] = useState<string | null>(null);
   const [liveTrains, setLiveTrains] = useState<LiveTrain[]>([]);
-  const [today, setToday] = useState<TodayData | null>(null);
 
   // Route from the link first, then the remembered route.
   useEffect(() => {
@@ -92,7 +91,6 @@ export default function CommuterBoard() {
     }
     let cancelled = false;
     setTrains([]);
-    setToday(null);
     const fetchTrains = async () => {
       setLoading(true);
       try {
@@ -102,7 +100,6 @@ export default function CommuterBoard() {
         if (cancelled) return;
         setTrains(data.trains || []);
         setLiveTrains(data.liveTrains || []);
-        setToday(data.today ?? null);
         setLiveFeed(Boolean(data.realtime?.available));
         setError(null);
         setUpdatedAt(new Date());
@@ -237,7 +234,13 @@ export default function CommuterBoard() {
               </section>
             )}
 
-            <Timetable originId={originId} destinationId={destinationId} today={today} now={now} boardHref={boardHref} />
+            <a className="panel schedule-link" href={boardHref(upcomingServiceDates(now)[0])}>
+              <span>
+                <span className="label">Full schedule</span>
+                <span className="schedule-link-t">Every train, every station</span>
+              </span>
+              <span className="schedule-link-sub">Today, tomorrow and the next 7 days &rarr;</span>
+            </a>
 
             <div className="certs">
               <WeatherWidget stationId={originId} which="Origin" onSampleChange={onWeatherA} />
