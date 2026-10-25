@@ -160,6 +160,7 @@ export default function RoutePicker({ originId, destinationId, onChange, forceOp
                   {lineStations.map((s) => (
                     <option key={s.id} value={s.id} disabled={s.id === draftTo}>
                       {s.name}
+                      {s.serviceNote ? ` (${s.serviceNote})` : ''}
                     </option>
                   ))}
                 </select>
@@ -185,6 +186,7 @@ export default function RoutePicker({ originId, destinationId, onChange, forceOp
                   {lineStations.map((s) => (
                     <option key={s.id} value={s.id} disabled={s.id === draftFrom}>
                       {s.name}
+                      {s.serviceNote ? ` (${s.serviceNote})` : ''}
                     </option>
                   ))}
                 </select>

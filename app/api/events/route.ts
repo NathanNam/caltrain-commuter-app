@@ -8,6 +8,8 @@ import { getValkyriesGamesForDate } from '@/lib/wnba-schedule';
 import { getGiantsGamesForDate } from '@/lib/mlb-schedule';
 import { get49ersGamesForDate } from '@/lib/nfl-schedule';
 import { getSharksGamesForDate } from '@/lib/nhl-schedule';
+import { pacificToday, pacificToUtc } from '@/lib/pacific-time';
+import { ticketmasterWindow } from '@/lib/event-window';
 
 // This API fetches events from multiple venues near Caltrain stations
 // Supports: Oracle Park, Chase Center, Bill Graham, The Fillmore, SAP Center, Levi's Stadium, and more
@@ -23,22 +25,13 @@ export async function GET(request: NextRequest) {
 
   // Get date parameter or use current Pacific Time date
   let dateStr = searchParams.get('date');
-  if (!dateStr) {
-    // Get current date in Pacific Time
-    const now = new Date();
-    const pacificDateStr = now.toLocaleString('en-US', {
-      timeZone: 'America/Los_Angeles',
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit'
-    }).split(',')[0]; // MM/DD/YYYY
-    const [month, day, year] = pacificDateStr.split('/');
-    dateStr = `${year}-${month}-${day}`; // YYYY-MM-DD
+  if (!dateStr || !/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+    dateStr = pacificToday();
   }
 
-  // Parse date as Pacific Time (not UTC) by appending Pacific timezone offset
-  // This ensures "2025-10-18" means Oct 18 PDT, not Oct 17 at 5pm PDT
-  const dateObj = new Date(dateStr + 'T12:00:00-07:00'); // Noon Pacific Time
+  // Noon Pacific on that date, with the real (DST-aware) offset
+  const [y, m, d] = dateStr.split('-').map(Number);
+  const dateObj = pacificToUtc(y, m, d, 12);
 
   // Fetch all events in parallel from all sources
   const [
@@ -217,12 +210,14 @@ async function fetchTicketmasterEvents(date: string): Promise<VenueEvent[]> {
 
   // All venue IDs to check
   const venueIds = Object.values(ticketmasterVenueIds);
+  // The Pacific calendar day as a UTC window (Ticketmaster expects UTC "Z" times)
+  const dayWindow = ticketmasterWindow(date);
 
   try {
     // Fetch events for all venues (you can parallelize this for better performance)
     const promises = venueIds.map(venueId =>
       fetch(
-        `https://app.ticketmaster.com/discovery/v2/events.json?apikey=${apiKey}&venueId=${venueId}&startDateTime=${date}T00:00:00Z&endDateTime=${date}T23:59:59Z&size=20`,
+        `https://app.ticketmaster.com/discovery/v2/events.json?apikey=${apiKey}&venueId=${venueId}&startDateTime=${dayWindow.start}&endDateTime=${dayWindow.end}&size=20`,
         { next: { revalidate: 1800 } }
       ).then(res => res.ok ? res.json() : null)
     );

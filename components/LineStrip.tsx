@@ -205,7 +205,7 @@ function Strip({ horizontal, lo, hi, originIdx, destIdx, tripMinutes, tokens, ar
         const rank = tokens.slice(0, k).filter((o) => o.idx === t.idx).length;
         const side = t.idx % 2 === 0 ? 1 : -1;
         const cx = horizontal ? p.x + rank * 24 * side : p.x + side * (24 + rank * 24);
-        const cy = horizontal ? p.y + side * 18 : p.y;
+        const cy = horizontal ? p.y + side * 26 : p.y;
         return (
           <g key={`tok-${t.label}`} aria-hidden="true">
             <circle cx={cx} cy={cy} r={12} className="train-tok" />

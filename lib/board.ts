@@ -2,18 +2,15 @@
 import { stations } from './stations';
 import { Station, Train } from './types';
 
-// South County Connector stations (8XX service) are not offered in the picker.
-const SOUTH_COUNTY = ['tamien', 'capitol', 'blossom-hill', 'morgan-hill', 'san-martin', 'gilroy'];
-
-/** Stations offered in the route picker and drawn on the line strip, north to south. */
-export const lineStations: Station[] = stations.filter((s) => !SOUTH_COUNTY.includes(s.id));
+/** Stations offered in the route picker and drawn on the line strip, north to south (all of them). */
+export const lineStations: Station[] = stations;
 
 export function isLineStation(id: string | null | undefined): id is string {
   return !!id && lineStations.some((s) => s.id === id);
 }
 
 /** Major stops drawn as "cities" (white circles); the rest are "towns" (dots). */
-export const CITY_IDS = new Set(['sf', 'mb', 'sm', 'hillsdale', 'rw', 'pa', 'mv', 'sunnyvale', 'diridon']);
+export const CITY_IDS = new Set(['sf', 'mb', 'sm', 'hillsdale', 'rw', 'pa', 'mv', 'sunnyvale', 'diridon', 'gilroy']);
 
 const SHORT: Record<string, string> = {
   sf: 'SF',
@@ -28,6 +25,9 @@ const SHORT: Record<string, string> = {
   'santa-clara': 'Santa Clara',
   'college-park': 'College Pk',
   diridon: 'SJ Diridon',
+  'blossom-hill': 'Blossom Hill',
+  'morgan-hill': 'Morgan Hill',
+  'san-martin': 'San Martin',
 };
 
 /** Short label for tight spots (horizontal strip, header). */

@@ -30,6 +30,7 @@
   --co-blue: #1f4e9c;
   --co-lblue: #5aa6d6;
   --co-orange: #e07a26;
+  --co-green: #1f6b3a;
   --focus: #1f4e9c;
   --hex-pattern: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='52' height='90' viewBox='0 0 52 90'%3E%3Cpath d='M13 0l13 7.5v15L13 30 0 22.5v-15zM39 45l13 7.5v15L39 75l-13-7.5v-15zM13 60l13 7.5' fill='none' stroke='%23d9c9a3' stroke-width='1'/%3E%3C/svg%3E");
   color-scheme: light;
@@ -614,6 +615,9 @@ body {
 }
 .charter.express i {
   background: var(--co-red);
+}
+.charter.south-county i {
+  background: var(--co-green);
 }
 
 /* status in tile-phase colours, always with text */

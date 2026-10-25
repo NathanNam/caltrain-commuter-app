@@ -1,25 +1,37 @@
 'use client';
 
-export type SampleSource = 'schedule' | 'delays' | 'alerts' | 'weather' | 'events';
+export type SampleSource = 'live' | 'timetable' | 'alerts' | 'weather' | 'events';
 
 const TEXT: Record<SampleSource, string> = {
-  schedule: 'Train times are simulated (the timetable could not be loaded).',
-  delays: 'On-time / late status is simulated (no live delay feed; set TRANSIT_API_KEY).',
+  live: 'Live delays and train positions are unavailable right now, so trains are shown as scheduled.',
+  timetable: 'The timetable has passed its end date; times may be out of date.',
   alerts: 'Service alerts are examples (set TRANSIT_API_KEY).',
   weather: 'Weather is sample data (set WEATHER_API_KEY).',
   events: 'Events are sample data (set TICKETMASTER_API_KEY).',
 };
 
-const ORDER: SampleSource[] = ['schedule', 'delays', 'alerts', 'weather', 'events'];
+const ORDER: SampleSource[] = ['live', 'timetable', 'alerts', 'weather', 'events'];
 
-/** The one place that says some of the board is sample data. */
-export default function SampleDataNote({ sources }: { sources: Partial<Record<SampleSource, boolean>> }) {
+/** The one place that says which parts of the board are not live. */
+export default function SampleDataNote({
+  sources,
+  timetableEnd,
+}: {
+  sources: Partial<Record<SampleSource, boolean>>;
+  timetableEnd?: string | null;
+}) {
   const active = ORDER.filter((k) => sources[k]);
   if (active.length === 0) return null;
+  const sample = active.some((k) => k === 'alerts' || k === 'weather' || k === 'events');
+  const label = sample ? 'Sample data' : 'Not live';
+  const endText =
+    timetableEnd && /^\d{8}$/.test(timetableEnd)
+      ? ` (ended ${timetableEnd.slice(0, 4)}-${timetableEnd.slice(4, 6)}-${timetableEnd.slice(6)})`
+      : '';
   return (
     <details className="sample">
-      <summary aria-label={`Sample data: ${active.length} ${active.length === 1 ? 'source' : 'sources'}. Show details`}>
-        Sample data
+      <summary aria-label={`${label}: ${active.length} ${active.length === 1 ? 'note' : 'notes'}. Show details`}>
+        {label}
       </summary>
       <div className="pop" role="note">
         <p>
@@ -27,7 +39,10 @@ export default function SampleDataNote({ sources }: { sources: Partial<Record<Sa
         </p>
         <ul>
           {active.map((k) => (
-            <li key={k}>{TEXT[k]}</li>
+            <li key={k}>
+              {TEXT[k]}
+              {k === 'timetable' ? endText : ''}
+            </li>
           ))}
         </ul>
       </div>

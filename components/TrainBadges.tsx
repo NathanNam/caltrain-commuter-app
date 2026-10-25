@@ -1,10 +1,10 @@
-import { Train } from '@/lib/types';
+import { Train, TrainType } from '@/lib/types';
 import { statusOf } from '@/lib/board';
 
 /** Service type as a flat-colour "company charter" badge. */
-export function CharterBadge({ type }: { type: Train['type'] }) {
+export function CharterBadge({ type }: { type: TrainType }) {
   return (
-    <span className={`charter ${type.toLowerCase()}`}>
+    <span className={`charter ${type.toLowerCase().replace(' ', '-')}`}>
       <i aria-hidden="true" />
       {type}
     </span>
@@ -64,8 +64,9 @@ function StatusIcon({ kind }: { kind: ReturnType<typeof statusOf>['kind'] }) {
   );
 }
 
-export const CHARTER_COLOR: Record<Train['type'], string> = {
+export const CHARTER_COLOR: Record<TrainType, string> = {
   Local: 'var(--co-lblue)',
   Limited: 'var(--co-orange)',
   Express: 'var(--co-red)',
+  'South County': 'var(--co-green)',
 };

@@ -86,7 +86,7 @@ export async function get49ersGamesForDate(date: Date): Promise<VenueEvent[]> {
           eventType: 'other', // NFL doesn't have a specific icon, use 'other'
           startTime: gameDate.toISOString(),
           endTime: new Date(gameDate.getTime() + 3.5 * 60 * 60 * 1000).toISOString(), // 3.5 hours duration
-          affectedStations: ['mountain-view', 'sunnyvale', 'santa-clara'], // Levi's Stadium - fans use Mountain View Caltrain + VTA
+          affectedStations: ['mv', 'sunnyvale', 'santa-clara'], // Levi's Stadium - fans use Mountain View Caltrain + VTA
           crowdLevel: 'high'
         });
       }
@@ -151,7 +151,7 @@ export async function get49ersGamesInRange(startDate: Date, endDate: Date): Prom
           eventType: 'other',
           startTime: gameDate.toISOString(),
           endTime: new Date(gameDate.getTime() + 3.5 * 60 * 60 * 1000).toISOString(),
-          affectedStations: ['mountain-view', 'sunnyvale', 'santa-clara'],
+          affectedStations: ['mv', 'sunnyvale', 'santa-clara'],
           crowdLevel: 'high'
         });
       }

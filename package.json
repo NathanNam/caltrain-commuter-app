@@ -9,7 +9,8 @@
     "prebuild": "node scripts/copy-maplibre-worker.mjs",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "test": "vitest run"
   },
   "repository": {
     "type": "git",
@@ -36,7 +37,6 @@
     "maplibre-gl": "^6.15.0",
     "next": "^16.4.3",
     "postcss": "^8.5.6",
-    "puppeteer": "^25.16.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "react-map-gl": "^8.1.0",
@@ -44,6 +44,7 @@
     "typescript": "^5.9.3"
   },
   "devDependencies": {
-    "@types/adm-zip": "^0.5.7"
+    "@types/adm-zip": "^0.5.7",
+    "vitest": "^3.2.7"
   }
 }

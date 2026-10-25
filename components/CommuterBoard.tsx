@@ -51,6 +51,7 @@ export default function CommuterBoard() {
   const [now, setNow] = useState(() => Date.now());
   const [flags, setFlags] = useState<Flags>({});
   const [liveFeed, setLiveFeed] = useState(false);
+  const [timetableEnd, setTimetableEnd] = useState<string | null>(null);
 
   // Route from the link first, then the remembered route.
   useEffect(() => {
@@ -88,10 +89,11 @@ export default function CommuterBoard() {
         const data = await response.json();
         if (cancelled) return;
         setTrains(data.trains || []);
-        setLiveFeed(Boolean(data.hasVehiclePositions));
+        setLiveFeed(Boolean(data.realtime?.available));
         setError(null);
         setUpdatedAt(new Date());
-        setFlags((f) => ({ ...f, schedule: Boolean(data.isMockSchedule), delays: Boolean(data.isMockData) }));
+        setFlags((f) => ({ ...f, live: !data.realtime?.available, timetable: Boolean(data.timetable?.expired) }));
+        setTimetableEnd(data.timetable?.feedEndDate ?? null);
       } catch (err) {
         if (!cancelled) setError(err instanceof Error ? err.message : 'Something went wrong.');
       } finally {
@@ -118,8 +120,8 @@ export default function CommuterBoard() {
   const onWeatherB = useCallback((v: boolean) => setFlags((f) => ({ ...f, weatherB: v })), []);
 
   const sampleSources = {
-    schedule: hasRoute && flags.schedule,
-    delays: hasRoute && flags.delays,
+    live: hasRoute && flags.live,
+    timetable: hasRoute && flags.timetable,
     alerts: flags.alerts,
     weather: hasRoute && (flags.weatherA || flags.weatherB),
     events: flags.events,
@@ -161,7 +163,7 @@ export default function CommuterBoard() {
           </div>
         </div>
         <div className="masthead-tools">
-          <SampleDataNote sources={sampleSources} />
+          <SampleDataNote sources={sampleSources} timetableEnd={timetableEnd} />
           <ThemeToggle />
         </div>
       </header>

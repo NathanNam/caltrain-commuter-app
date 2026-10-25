@@ -1,29 +1,197 @@
-// GTFS-Realtime utilities for fetching Caltrain real-time data from 511.org
+// GTFS-Realtime for Caltrain from 511.org (https only).
+//
+// Trip updates and vehicle positions are fetched together through one shared
+// snapshot that is cached for 60 seconds and reused by every request, so any
+// number of open tabs stays far below 511's rate limit (60 requests/hour per
+// key by default).
 import GtfsRealtimeBindings from 'gtfs-realtime-bindings';
 
 const CALTRAIN_AGENCY = 'CT';
-const API_BASE = 'http://api.511.org/transit';
+const API_BASE = 'https://api.511.org/transit';
+const SNAPSHOT_TTL_MS = 60 * 1000;
+
+const rt = GtfsRealtimeBindings.transit_realtime;
+export const TripRelationship = rt.TripDescriptor.ScheduleRelationship;
+export const StopRelationship = rt.TripUpdate.StopTimeUpdate.ScheduleRelationship;
+
+export interface StopTimeUpdate {
+  stopId: string;
+  stopSequence?: number;
+  arrivalDelay?: number; // seconds
+  departureDelay?: number; // seconds
+  /** TripUpdate.StopTimeUpdate.ScheduleRelationship enum value. */
+  scheduleRelationship: number;
+}
 
 export interface TripUpdate {
   tripId: string;
   routeId: string;
-  startDate: string;
-  startTime: string;
+  startDate: string; // YYYYMMDD, may be empty
+  /** TripDescriptor.ScheduleRelationship enum value. */
+  scheduleRelationship: number;
   stopTimeUpdates: StopTimeUpdate[];
 }
 
-export interface StopTimeUpdate {
-  stopId: string;
-  stopSequence: number;
-  arrival?: {
-    delay: number; // in seconds
-    time: number; // unix timestamp
-  };
-  departure?: {
-    delay: number; // in seconds
-    time: number; // unix timestamp
-  };
-  scheduleRelationship?: string;
+export interface VehiclePosition {
+  vehicleId: string;
+  tripId: string;
+  startDate: string;
+  latitude: number;
+  longitude: number;
+  bearing?: number;
+  speed?: number;
+  currentStatus?: 'INCOMING_AT' | 'STOPPED_AT' | 'IN_TRANSIT_TO';
+  timestamp: number;
+}
+
+export interface RealtimeSnapshot {
+  available: boolean;
+  tripUpdates: TripUpdate[];
+  vehicles: VehiclePosition[];
+  fetchedAt: number;
+  reason?: string;
+}
+
+function toNumber(v: number | { toNumber(): number } | null | undefined): number | undefined {
+  if (v == null) return undefined;
+  return typeof v === 'number' ? v : v.toNumber();
+}
+
+async function fetchFeed(kind: 'tripupdates' | 'vehiclepositions', apiKey: string) {
+  const url = `${API_BASE}/${kind}?api_key=${encodeURIComponent(apiKey)}&agency=${CALTRAIN_AGENCY}`;
+  const response = await fetch(url, { cache: 'no-store' });
+  if (!response.ok) throw new Error(`511 ${kind} HTTP ${response.status}`);
+  return rt.FeedMessage.decode(new Uint8Array(await response.arrayBuffer()));
+}
+
+export function parseTripUpdates(feed: InstanceType<typeof rt.FeedMessage>): TripUpdate[] {
+  const updates: TripUpdate[] = [];
+  for (const entity of feed.entity) {
+    const tu = entity.tripUpdate;
+    if (!tu?.trip) continue;
+    updates.push({
+      tripId: tu.trip.tripId || '',
+      routeId: tu.trip.routeId || '',
+      startDate: tu.trip.startDate || '',
+      scheduleRelationship: tu.trip.scheduleRelationship ?? TripRelationship.SCHEDULED,
+      stopTimeUpdates: (tu.stopTimeUpdate || []).map((stu) => ({
+        stopId: stu.stopId || '',
+        stopSequence: stu.stopSequence ?? undefined,
+        arrivalDelay: stu.arrival?.delay ?? undefined,
+        departureDelay: stu.departure?.delay ?? undefined,
+        scheduleRelationship: stu.scheduleRelationship ?? StopRelationship.SCHEDULED,
+      })),
+    });
+  }
+  return updates;
+}
+
+const VEHICLE_STATUS = ['INCOMING_AT', 'STOPPED_AT', 'IN_TRANSIT_TO'] as const;
+
+export function parseVehicles(feed: InstanceType<typeof rt.FeedMessage>): VehiclePosition[] {
+  const out: VehiclePosition[] = [];
+  for (const entity of feed.entity) {
+    const v = entity.vehicle;
+    const pos = v?.position;
+    if (!v || !pos || pos.latitude == null || pos.longitude == null) continue;
+    out.push({
+      vehicleId: v.vehicle?.id || entity.id || '',
+      tripId: v.trip?.tripId || '',
+      startDate: v.trip?.startDate || '',
+      latitude: pos.latitude,
+      longitude: pos.longitude,
+      bearing: pos.bearing ?? undefined,
+      speed: pos.speed ?? undefined,
+      currentStatus: v.currentStatus != null ? VEHICLE_STATUS[v.currentStatus] : undefined,
+      timestamp: toNumber(v.timestamp) ?? Math.floor(Date.now() / 1000),
+    });
+  }
+  return out;
+}
+
+let snapshot: RealtimeSnapshot | null = null;
+let inflight: Promise<RealtimeSnapshot> | null = null;
+
+/** Trip updates + vehicle positions, shared and cached for 60 s across requests. */
+export async function getRealtimeSnapshot(): Promise<RealtimeSnapshot> {
+  if (snapshot && Date.now() - snapshot.fetchedAt < SNAPSHOT_TTL_MS) return snapshot;
+  if (inflight) return inflight;
+
+  const apiKey = process.env.TRANSIT_API_KEY;
+  if (!apiKey) {
+    return { available: false, tripUpdates: [], vehicles: [], fetchedAt: Date.now(), reason: 'no-key' };
+  }
+
+  inflight = (async () => {
+    const [tu, vp] = await Promise.allSettled([fetchFeed('tripupdates', apiKey), fetchFeed('vehiclepositions', apiKey)]);
+    const tripUpdates = tu.status === 'fulfilled' ? parseTripUpdates(tu.value) : [];
+    const vehicles = vp.status === 'fulfilled' ? parseVehicles(vp.value) : [];
+    const available = tu.status === 'fulfilled';
+    const reason = available ? undefined : (tu as PromiseRejectedResult).reason?.message ?? 'fetch-failed';
+    if (!available) console.error('511 GTFS-RT unavailable:', reason);
+    snapshot = { available, tripUpdates, vehicles, fetchedAt: Date.now(), reason };
+    return snapshot;
+  })().finally(() => {
+    inflight = null;
+  });
+  return inflight;
+}
+
+/** The trip update for a scheduled trip on its service date (startDate checked when present). */
+export function findTripUpdate(updates: TripUpdate[], tripId: string, serviceDate?: string): TripUpdate | null {
+  return (
+    updates.find((u) => u.tripId === tripId && (!u.startDate || !serviceDate || u.startDate === serviceDate)) ?? null
+  );
+}
+
+/** The vehicle running a scheduled trip on its service date (by trip_id, never by position). */
+export function findVehicle(vehicles: VehiclePosition[], tripId: string, serviceDate?: string): VehiclePosition | null {
+  return (
+    vehicles.find((v) => v.tripId === tripId && (!v.startDate || !serviceDate || v.startDate === serviceDate)) ?? null
+  );
+}
+
+export interface LiveStatus {
+  delay: number; // minutes
+  status: 'on-time' | 'delayed' | 'cancelled';
+}
+
+/**
+ * Live status of a trip at the rider's origin stop.
+ * - Trip-level CANCELED -> cancelled.
+ * - The origin stop SKIPPED -> cancelled (the train will not stop there).
+ * - Otherwise the delay of the origin stop's update, or, per GTFS-RT
+ *   propagation, of the nearest earlier stop on the trip that has one.
+ * Returns null when the feed has no prediction for the origin.
+ */
+export function getStopDelay(
+  update: TripUpdate,
+  originStopId: string,
+  originSequence?: number
+): LiveStatus | null {
+  if (update.scheduleRelationship === TripRelationship.CANCELED) return { delay: 0, status: 'cancelled' };
+
+  const atOrigin = update.stopTimeUpdates.find((s) => s.stopId === originStopId);
+  if (atOrigin?.scheduleRelationship === StopRelationship.SKIPPED) return { delay: 0, status: 'cancelled' };
+
+  let source: StopTimeUpdate | undefined =
+    atOrigin && atOrigin.scheduleRelationship !== StopRelationship.NO_DATA ? atOrigin : undefined;
+  if (!source && originSequence != null) {
+    source = update.stopTimeUpdates
+      .filter(
+        (s) =>
+          s.stopSequence != null &&
+          s.stopSequence <= originSequence &&
+          s.scheduleRelationship === StopRelationship.SCHEDULED
+      )
+      .sort((a, b) => (b.stopSequence ?? 0) - (a.stopSequence ?? 0))[0];
+  }
+  if (!source) return null;
+
+  const seconds = source.departureDelay ?? source.arrivalDelay;
+  if (seconds == null) return null;
+  const minutes = Math.round(seconds / 60);
+  return { delay: minutes, status: minutes >= 1 ? 'delayed' : 'on-time' };
 }
 
 export interface Alert {
@@ -44,91 +212,6 @@ export interface Alert {
   }>;
 }
 
-export interface VehiclePosition {
-  vehicleId: string;
-  tripId: string;
-  routeId: string;
-  latitude: number;
-  longitude: number;
-  bearing?: number; // Direction of travel in degrees
-  speed?: number; // Speed in meters per second
-  currentStopSequence?: number;
-  currentStatus?: 'INCOMING_AT' | 'STOPPED_AT' | 'IN_TRANSIT_TO';
-  timestamp: number; // Unix timestamp
-}
-
-/**
- * Fetch real-time trip updates from 511.org
- */
-export async function fetchTripUpdates(): Promise<TripUpdate[]> {
-  const apiKey = process.env.TRANSIT_API_KEY;
-  if (!apiKey) {
-    console.warn('TRANSIT_API_KEY not configured');
-    return [];
-  }
-
-  try {
-    const url = `${API_BASE}/tripupdates?api_key=${apiKey}&agency=${CALTRAIN_AGENCY}`;
-    const response = await fetch(url, {
-      next: { revalidate: 30 }, // Cache for 30 seconds
-    });
-
-    if (!response.ok) {
-      throw new Error(`511.org API error: ${response.status}`);
-    }
-
-    const buffer = await response.arrayBuffer();
-    const feed = GtfsRealtimeBindings.transit_realtime.FeedMessage.decode(
-      new Uint8Array(buffer)
-    );
-
-    const updates: TripUpdate[] = [];
-
-    for (const entity of feed.entity) {
-      if (entity.tripUpdate && entity.tripUpdate.trip) {
-        const trip = entity.tripUpdate.trip;
-        const stopTimeUpdates: StopTimeUpdate[] = [];
-
-        for (const stu of entity.tripUpdate.stopTimeUpdate || []) {
-          stopTimeUpdates.push({
-            stopId: stu.stopId || '',
-            stopSequence: stu.stopSequence || 0,
-            arrival: stu.arrival
-              ? {
-                  delay: stu.arrival.delay || 0,
-                  time: typeof stu.arrival.time === 'number'
-                    ? stu.arrival.time
-                    : (stu.arrival.time?.toNumber() || 0),
-                }
-              : undefined,
-            departure: stu.departure
-              ? {
-                  delay: stu.departure.delay || 0,
-                  time: typeof stu.departure.time === 'number'
-                    ? stu.departure.time
-                    : (stu.departure.time?.toNumber() || 0),
-                }
-              : undefined,
-            scheduleRelationship: stu.scheduleRelationship?.toString(),
-          });
-        }
-
-        updates.push({
-          tripId: trip.tripId || '',
-          routeId: trip.routeId || '',
-          startDate: trip.startDate || '',
-          startTime: trip.startTime || '',
-          stopTimeUpdates,
-        });
-      }
-    }
-
-    return updates;
-  } catch (error) {
-    console.error('Error fetching trip updates:', error);
-    return [];
-  }
-}
 
 /**
  * Fetch service alerts from 511.org
@@ -141,7 +224,7 @@ export async function fetchServiceAlerts(): Promise<Alert[]> {
   }
 
   try {
-    const url = `${API_BASE}/servicealerts?api_key=${apiKey}&agency=${CALTRAIN_AGENCY}&format=json`;
+    const url = `${API_BASE}/servicealerts?api_key=${encodeURIComponent(apiKey)}&agency=${CALTRAIN_AGENCY}&format=json`;
     const response = await fetch(url, {
       next: { revalidate: 300 }, // Cache for 5 minutes
     });
@@ -181,109 +264,6 @@ export async function fetchServiceAlerts(): Promise<Alert[]> {
   }
 }
 
-/**
- * Fetch real-time vehicle positions from 511.org
- * Returns current locations of all active Caltrain vehicles
- */
-export async function fetchVehiclePositions(): Promise<VehiclePosition[]> {
-  const apiKey = process.env.TRANSIT_API_KEY;
-  if (!apiKey) {
-    console.warn('TRANSIT_API_KEY not configured');
-    return [];
-  }
-
-  try {
-    const url = `${API_BASE}/vehiclepositions?api_key=${apiKey}&agency=${CALTRAIN_AGENCY}`;
-    const response = await fetch(url, {
-      next: { revalidate: 10 }, // Cache for 10 seconds (positions change frequently)
-    });
-
-    if (!response.ok) {
-      throw new Error(`511.org API error: ${response.status}`);
-    }
-
-    const buffer = await response.arrayBuffer();
-    const feed = GtfsRealtimeBindings.transit_realtime.FeedMessage.decode(
-      new Uint8Array(buffer)
-    );
-
-    const positions: VehiclePosition[] = [];
-
-    for (const entity of feed.entity) {
-      const vehicle = entity.vehicle;
-      const position = vehicle?.position;
-
-      if (vehicle && position && position.latitude != null && position.longitude != null) {
-        const trip = vehicle.trip;
-
-        positions.push({
-          vehicleId: vehicle.vehicle?.id || entity.id || '',
-          tripId: trip?.tripId || '',
-          routeId: trip?.routeId || '',
-          latitude: position.latitude,
-          longitude: position.longitude,
-          bearing: position.bearing ?? undefined,
-          speed: position.speed ?? undefined,
-          currentStopSequence: vehicle.currentStopSequence ?? undefined,
-          currentStatus: mapVehicleStatus(vehicle.currentStatus),
-          timestamp: typeof vehicle.timestamp === 'number'
-            ? vehicle.timestamp
-            : (vehicle.timestamp?.toNumber() || Date.now() / 1000),
-        });
-      }
-    }
-
-    return positions;
-  } catch (error) {
-    console.error('Error fetching vehicle positions:', error);
-    return [];
-  }
-}
-
-/**
- * Map GTFS-RT vehicle status to string
- */
-function mapVehicleStatus(
-  status: number | undefined | null
-): 'INCOMING_AT' | 'STOPPED_AT' | 'IN_TRANSIT_TO' | undefined {
-  switch (status) {
-    case 0:
-      return 'INCOMING_AT';
-    case 1:
-      return 'STOPPED_AT';
-    case 2:
-      return 'IN_TRANSIT_TO';
-    default:
-      return undefined;
-  }
-}
-
-/**
- * Get vehicle position for a specific trip.
- *
- * Matches by exact trip_id first, then falls back to the train number (mirroring
- * getTripDelay) so the live map still locates a vehicle when the static feed's
- * trip_id and the realtime feed's tripId don't line up exactly.
- *
- * @param trainNumber - Optional train number to use as fallback if exact trip_id match fails
- */
-export function getVehicleForTrip(
-  positions: VehiclePosition[],
-  tripId: string,
-  trainNumber?: string
-): VehiclePosition | null {
-  const exact = positions.find((p) => p.tripId === tripId);
-  if (exact) return exact;
-
-  if (trainNumber) {
-    const byTrainNumber = positions.find(
-      (p) => p.tripId === trainNumber || p.tripId.endsWith(`-${trainNumber}`)
-    );
-    if (byTrainNumber) return byTrainNumber;
-  }
-
-  return null;
-}
 
 /**
  * Map 511.org severity to our app's severity levels
@@ -297,116 +277,3 @@ function mapSeverity(severity: string | undefined): 'info' | 'warning' | 'critic
   return 'info';
 }
 
-/**
- * Get delay for a specific stop on a specific trip
- *
- * @param updates - Array of trip updates from GTFS-Realtime feed
- * @param stopId - The GTFS stop_id to match
- * @param tripId - The GTFS trip_id to match (optional - if not provided, matches any trip at the stop)
- * @returns Delay information for the specific trip at the specific stop, or null if not found
- */
-export function getStopDelay(
-  updates: TripUpdate[],
-  stopId: string,
-  tripId?: string
-): { delay: number; status: 'on-time' | 'delayed' | 'cancelled' } | null {
-  for (const update of updates) {
-    // If tripId is provided, only match this specific trip
-    if (tripId && update.tripId !== tripId) {
-      continue;
-    }
-
-    for (const stu of update.stopTimeUpdates) {
-      if (stu.stopId === stopId) {
-        const delay = stu.departure?.delay || stu.arrival?.delay || 0;
-        const delayMinutes = Math.round(delay / 60);
-
-        let status: 'on-time' | 'delayed' | 'cancelled' = 'on-time';
-        if (stu.scheduleRelationship === 'SKIPPED' || stu.scheduleRelationship === 'CANCELED') {
-          status = 'cancelled';
-        } else if (Math.abs(delayMinutes) >= 1) {
-          // Show delays of 1 minute or more
-          status = 'delayed';
-        }
-
-        return { delay: delayMinutes, status };
-      }
-    }
-  }
-
-  return null;
-}
-
-/**
- * Get delay for a specific trip (any stop on the trip)
- * This is useful when you know the trip_id but don't have the exact GTFS stop_id
- *
- * @param updates - Array of trip updates from GTFS-Realtime feed
- * @param tripId - The GTFS trip_id to match
- * @param trainNumber - Optional train number to use as fallback if exact trip_id match fails
- * @returns Delay information for the trip, or null if not found
- */
-export function getTripDelay(
-  updates: TripUpdate[],
-  tripId: string,
-  trainNumber?: string
-): { delay: number; status: 'on-time' | 'delayed' | 'cancelled' } | null {
-  // First, try exact trip_id match
-  for (const update of updates) {
-    if (update.tripId === tripId) {
-      return calculateTripDelay(update);
-    }
-  }
-
-  // Fallback: Try matching by train number (GTFS-RT often uses just the train number as trip_id)
-  if (trainNumber) {
-    for (const update of updates) {
-      // Check if tripId equals train number OR ends with train number
-      if (update.tripId === trainNumber || update.tripId.endsWith(`-${trainNumber}`)) {
-        return calculateTripDelay(update);
-      }
-    }
-  }
-
-  return null;
-}
-
-/**
- * Helper function to calculate delay from a TripUpdate
- */
-function calculateTripDelay(
-  update: TripUpdate
-): { delay: number; status: 'on-time' | 'delayed' | 'cancelled' } | null {
-  if (update.stopTimeUpdates.length === 0) {
-    return null;
-  }
-
-  // Find the maximum delay across all stops in this trip
-  // This captures delays that accumulate during the journey
-  let maxDelaySeconds = 0;
-  let isCancelled = false;
-
-  for (const stop of update.stopTimeUpdates) {
-    if (stop.scheduleRelationship === 'SKIPPED' || stop.scheduleRelationship === 'CANCELED') {
-      isCancelled = true;
-      break;
-    }
-
-    const stopDelay = stop.departure?.delay || stop.arrival?.delay || 0;
-    if (Math.abs(stopDelay) > Math.abs(maxDelaySeconds)) {
-      maxDelaySeconds = stopDelay;
-    }
-  }
-
-  const delayMinutes = Math.round(maxDelaySeconds / 60);
-
-  let status: 'on-time' | 'delayed' | 'cancelled' = 'on-time';
-  if (isCancelled) {
-    status = 'cancelled';
-  } else if (Math.abs(delayMinutes) >= 1) {
-    // Show delays of 1 minute or more
-    status = 'delayed';
-  }
-
-  return { delay: delayMinutes, status };
-}
