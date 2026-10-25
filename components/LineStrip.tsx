@@ -9,8 +9,8 @@ interface LineStripProps {
   /** Ride minutes for the next train, shown in the destination circle. */
   tripMinutes?: number;
   /**
-   * Live train tokens: one per listed departure whose own vehicle is reporting
-   * (index in lineStations of the nearest stop, and that train's number).
+   * Live train tokens: every train reporting a position on the line (index in
+   * lineStations of the nearest stop, its real train number and direction).
    */
   tokens: LiveToken[];
 }
@@ -18,6 +18,9 @@ interface LineStripProps {
 export interface LiveToken {
   idx: number;
   label: string;
+  direction: 'Northbound' | 'Southbound';
+  /** One of the listed departures for the chosen route. */
+  mine: boolean;
 }
 
 const S3 = Math.sqrt(3);
@@ -36,7 +39,8 @@ function hexPoints(c: Pt, r: number, pointy: boolean): string {
 /**
  * The line drawn as a strip of hex tiles in the spirit of an 1830 map
  * (original drawing): green tiles for your trip, yellow for the rest of the
- * line, cities as white circles, towns as dots, the live train as a red token.
+ * line, cities as white circles, towns as dots, live trains as tokens
+ * (red southbound, blue northbound, each with a pointer in its direction).
  * Vertical on wide screens, horizontal (scrollable) on phones.
  */
 export default function LineStrip({ originIdx, destIdx, tripMinutes, tokens }: LineStripProps) {
@@ -57,7 +61,7 @@ export default function LineStrip({ originIdx, destIdx, tripMinutes, tokens }: L
   const dest = lineStations[destIdx];
   const stops = hi - lo;
   const tokenText = tokens
-    .map((t) => ` Train ${t.label} is near ${plainName(lineStations[t.idx])}.`)
+    .map((t) => ` Train ${t.label}, ${t.direction.toLowerCase()}, is near ${plainName(lineStations[t.idx])}.`)
     .join('');
   const aria = `Line map: your trip from ${plainName(origin)} to ${plainName(dest)}, ${stops} stops down the line${
     tripMinutes ? `, ${tripMinutes} minutes on the next train` : ''
@@ -204,11 +208,19 @@ function Strip({ horizontal, lo, hi, originIdx, destIdx, tripMinutes, tokens, ar
         // station label, so every train number stays readable.
         const rank = tokens.slice(0, k).filter((o) => o.idx === t.idx).length;
         const side = t.idx % 2 === 0 ? 1 : -1;
-        const cx = horizontal ? p.x + rank * 24 * side : p.x + side * (24 + rank * 24);
+        const cx = horizontal ? p.x + rank * 30 * side : p.x + side * (24 + rank * 30);
         const cy = horizontal ? p.y + side * 26 : p.y;
+        const south = t.direction === 'Southbound';
+        // Pointer in the direction of travel: down the page (vertical strip)
+        // or to the right (horizontal strip) is southbound.
+        const d = south ? 1 : -1;
+        const tip = horizontal
+          ? `${cx + d * 21},${cy} ${cx + d * 9},${cy - 8} ${cx + d * 9},${cy + 8}`
+          : `${cx},${cy + d * 21} ${cx - 8},${cy + d * 9} ${cx + 8},${cy + d * 9}`;
         return (
           <g key={`tok-${t.label}`} aria-hidden="true">
-            <circle cx={cx} cy={cy} r={12} className="train-tok" />
+            <polygon points={tip} className={`train-tip ${south ? 'sb' : 'nb'}`} />
+            <circle cx={cx} cy={cy} r={12} className={`train-tok ${south ? 'sb' : 'nb'}${t.mine ? ' mine' : ''}`} />
             <text x={cx} y={cy + 3.5} textAnchor="middle" className="train-tok-t">
               {t.label.slice(0, 4)}
             </text>

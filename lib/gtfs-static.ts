@@ -23,11 +23,13 @@ export interface GtfsTrip {
   routeId: string;
   serviceId: string;
   shortName: string;
+  directionId: string; // '0' = northbound, '1' = southbound in Caltrain's feed
 }
 
 export interface GtfsFeed {
   source: '511' | 'local';
   trips: GtfsTrip[];
+  tripsById: Map<string, GtfsTrip>;
   stopTimesByTrip: Map<string, StopTime[]>;
   routeNames: Map<string, string>; // route_id -> route_short_name / long name
   calendar: Row[];
@@ -67,6 +69,7 @@ export function buildFeed(files: Record<string, string | undefined>, source: Gtf
     routeId: r.route_id,
     serviceId: r.service_id,
     shortName: r.trip_short_name || r.trip_id,
+    directionId: r.direction_id ?? '',
   }));
 
   const stopTimesByTrip = new Map<string, StopTime[]>();
@@ -99,6 +102,7 @@ export function buildFeed(files: Record<string, string | undefined>, source: Gtf
   return {
     source,
     trips,
+    tripsById: new Map(trips.map((t) => [t.tripId, t])),
     stopTimesByTrip,
     routeNames,
     calendar: parseCsv(files['calendar.txt'] ?? ''),

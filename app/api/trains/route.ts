@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { Train } from '@/lib/types';
+import { LiveTrain, Train } from '@/lib/types';
 import { getStationById } from '@/lib/stations';
 import { findTripUpdate, findVehicle, getRealtimeSnapshot, getStopDelay } from '@/lib/gtfs-realtime';
-import { findTrips, getFeed, isFeedExpired } from '@/lib/gtfs-static';
+import { findTrips, getFeed, isFeedExpired, trainTypeFromRoute } from '@/lib/gtfs-static';
 
 const MAX_TRAINS = 5;
 // Look back far enough to keep a late train that is still due to leave.
@@ -75,9 +75,28 @@ export async function GET(request: NextRequest) {
     if (trains.length >= MAX_TRAINS) break;
   }
 
+  // Every train reporting a position on the line, named by its GTFS-RT
+  // trip_id -> trips.txt trip_short_name (never by position or order).
+  const listed = new Set(trains.map((t) => t.tripId));
+  const liveTrains: LiveTrain[] = [];
+  for (const v of realtime.vehicles) {
+    const trip = feed.tripsById.get(v.tripId);
+    if (!trip) continue;
+    liveTrains.push({
+      trainNumber: trip.shortName,
+      direction: trip.directionId === '0' ? 'Northbound' : 'Southbound',
+      type: trainTypeFromRoute(trip.routeId, feed.routeNames),
+      latitude: v.latitude,
+      longitude: v.longitude,
+      currentStatus: v.currentStatus,
+      onRoute: listed.has(v.tripId),
+    });
+  }
+
   return NextResponse.json(
     {
       trains,
+      liveTrains,
       realtime: {
         available: realtime.available,
         fetchedAt: new Date(realtime.fetchedAt).toISOString(),

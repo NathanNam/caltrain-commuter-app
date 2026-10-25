@@ -3,10 +3,7 @@
   "version": "1.0.0",
   "description": "",
   "scripts": {
-    "postinstall": "node scripts/copy-maplibre-worker.mjs",
-    "predev": "node scripts/copy-maplibre-worker.mjs",
     "dev": "next dev",
-    "prebuild": "node scripts/copy-maplibre-worker.mjs",
     "build": "next build",
     "start": "next start",
     "lint": "eslint .",
@@ -34,12 +31,10 @@
     "eslint": "^9.37.0",
     "eslint-config-next": "^15.5.5",
     "gtfs-realtime-bindings": "^1.1.1",
-    "maplibre-gl": "^6.15.0",
     "next": "^16.4.3",
     "postcss": "^8.5.6",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
-    "react-map-gl": "^8.1.0",
     "tailwindcss": "^4.1.14",
     "typescript": "^5.9.3"
   },

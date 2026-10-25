@@ -14,6 +14,18 @@ export interface Station {
   serviceNote?: string;
 }
 
+/** A train currently reporting a position anywhere on the line. */
+export interface LiveTrain {
+  trainNumber: string;
+  direction: 'Northbound' | 'Southbound';
+  type: TrainType;
+  latitude: number;
+  longitude: number;
+  currentStatus?: 'INCOMING_AT' | 'STOPPED_AT' | 'IN_TRANSIT_TO';
+  /** True when this train is one of the listed departures for the chosen route. */
+  onRoute: boolean;
+}
+
 export type TrainType = 'Local' | 'Limited' | 'Express' | 'South County';
 
 export interface Train {

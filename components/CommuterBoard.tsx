@@ -1,16 +1,15 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Train } from '@/lib/types';
+import { LiveTrain, Train } from '@/lib/types';
 import { getStationById } from '@/lib/stations';
 import { formatTime } from '@/lib/utils';
-import { isLineStation, lineStations, loadLastRoute, nearestLineStation, saveLastRoute } from '@/lib/board';
+import { isLineStation, lineStations, loadLastRoute, nearestLineStation, plainName, saveLastRoute } from '@/lib/board';
 import RoutePicker from './RoutePicker';
 import ServiceAlerts from './ServiceAlerts';
 import WeatherWidget from './WeatherWidget';
 import VenueEvents from './VenueEvents';
 import LineStrip, { LiveToken } from './LineStrip';
-import MapSection from './MapSection';
 import ThemeToggle from './ThemeToggle';
 import SampleDataNote, { SampleSource } from './SampleDataNote';
 import { DepartureList, NextTrainHero } from './Departures';
@@ -52,6 +51,7 @@ export default function CommuterBoard() {
   const [flags, setFlags] = useState<Flags>({});
   const [liveFeed, setLiveFeed] = useState(false);
   const [timetableEnd, setTimetableEnd] = useState<string | null>(null);
+  const [liveTrains, setLiveTrains] = useState<LiveTrain[]>([]);
 
   // Route from the link first, then the remembered route.
   useEffect(() => {
@@ -73,7 +73,7 @@ export default function CommuterBoard() {
 
   const hasRoute = isLineStation(originId) && isLineStation(destinationId) && originId !== destinationId;
 
-  // One train fetch feeds the countdown, departures, hex strip and street map.
+  // One train fetch feeds the countdown, departures and the hex strip.
   useEffect(() => {
     if (!hasRoute) {
       setTrains([]);
@@ -89,6 +89,7 @@ export default function CommuterBoard() {
         const data = await response.json();
         if (cancelled) return;
         setTrains(data.trains || []);
+        setLiveTrains(data.liveTrains || []);
         setLiveFeed(Boolean(data.realtime?.available));
         setError(null);
         setUpdatedAt(new Date());
@@ -135,14 +136,16 @@ export default function CommuterBoard() {
   const upcoming = trains.filter((t) => new Date(t.departureTime).getTime() > now - 60000);
   const next = upcoming.find((t) => t.status !== 'cancelled') ?? null;
   const later = upcoming.filter((t) => t !== next);
-  // Live tokens come only from each listed train's own vehicle, which the API
-  // matched by GTFS-RT trip_id; the street map uses the same list.
-  const tokens: LiveToken[] = upcoming
-    .filter((t) => t.vehiclePosition)
+  // Every train reporting a position on the line, named by the API from its
+  // GTFS-RT trip_id (the same response that drives the cards).
+  const tokens: LiveToken[] = liveTrains
     .map((t) => ({
-      idx: nearestLineStation(t.vehiclePosition!.latitude, t.vehiclePosition!.longitude),
+      idx: nearestLineStation(t.latitude, t.longitude),
       label: t.trainNumber,
-    }));
+      direction: t.direction,
+      mine: t.onRoute,
+    }))
+    .sort((a, b) => a.idx - b.idx || Number(b.mine) - Number(a.mine));
 
   const tripStationIds = useMemo(() => {
     const lo = Math.min(originIdx, destIdx);
@@ -244,14 +247,31 @@ export default function CommuterBoard() {
                   <svg width="16" height="16" aria-hidden="true">
                     <circle cx="8" cy="8" r="7" fill="var(--co-red)" stroke="#1b1a17" strokeWidth="1.5" />
                   </svg>
-                  {tokens.length > 0
-                    ? `${tokens.length === 1 ? 'Train' : 'Trains'} ${tokens.map((t) => t.label).join(', ')} (live)`
-                    : 'Live train (none reporting)'}
+                  Southbound train
+                </span>
+                <span>
+                  <svg width="16" height="16" aria-hidden="true">
+                    <circle cx="8" cy="8" r="7" fill="var(--co-blue)" stroke="#1b1a17" strokeWidth="1.5" />
+                  </svg>
+                  Northbound train
                 </span>
               </div>
+              <p className="live-list">
+                {tokens.length > 0
+                  ? `Live now: ${tokens
+                      .map(
+                        (t) =>
+                          `${t.label} ${t.direction === 'Southbound' ? 'south' : 'north'}bound near ${plainName(
+                            lineStations[t.idx]
+                          )}${t.mine ? ' (your route)' : ''}`
+                      )
+                      .join(' · ')}`
+                  : liveFeed
+                    ? 'No trains are reporting a position right now.'
+                    : 'Live train positions are not available right now.'}
+              </p>
             </section>
 
-            <MapSection originId={originId} destinationId={destinationId} trains={upcoming} />
           </div>
         </main>
       ) : (

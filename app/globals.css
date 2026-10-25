@@ -53,7 +53,7 @@ html.dark {
   --tile-rim: #5a4f36;
   --hex-faint: #3a3429;
   --co-red: #d8343f;
-  --co-blue: #6f9be0;
+  --co-blue: #3d6fc0;
   --focus: #f2cf3c;
   --hex-pattern: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='52' height='90' viewBox='0 0 52 90'%3E%3Cpath d='M13 0l13 7.5v15L13 30 0 22.5v-15zM39 45l13 7.5v15L39 75l-13-7.5v-15zM13 60l13 7.5' fill='none' stroke='%23312c22' stroke-width='1'/%3E%3C/svg%3E");
   color-scheme: dark;
@@ -1113,6 +1113,23 @@ body {
   stroke: #1b1a17;
   stroke-width: 2;
 }
+.train-tok.nb {
+  fill: var(--co-blue);
+}
+.train-tok.mine {
+  stroke-width: 3.5;
+}
+.train-tip {
+  fill: #1b1a17;
+}
+html.dark .train-tip {
+  fill: var(--ink);
+}
+.live-list {
+  font-size: 12px;
+  color: var(--ink-2);
+  margin: 6px 4px 0;
+}
 .train-tok-t {
   fill: #fff;
   font: 800 9px var(--font-sans), sans-serif;
@@ -1145,47 +1162,6 @@ body {
   font-size: 12px;
   color: var(--ink-2);
   margin: 8px 4px 0;
-}
-
-/* ---------- street map section ---------- */
-.mapsec {
-  padding: 12px;
-}
-
-.mapsec .maphead {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  margin: 2px 4px 8px;
-}
-
-.map-frame {
-  height: 360px;
-  border: 2px solid var(--ink);
-  border-radius: 4px;
-  overflow: hidden;
-  background: var(--paper-2);
-  display: grid;
-  place-items: center;
-  color: var(--ink-2);
-  font-size: 14px;
-  text-align: center;
-  padding: 0;
-}
-
-.map-frame > .map-canvas {
-  width: 100%;
-  height: 100%;
-}
-
-.dir-dot {
-  width: 12px;
-  height: 12px;
-  border-radius: 50%;
-  border: 1.5px solid var(--ink);
-  display: inline-block;
 }
 
 /* ---------- misc ---------- */
@@ -1227,14 +1203,4 @@ body {
   color: var(--ink-2);
   border-top: 2px solid var(--ink);
   padding-top: 10px;
-}
-
-/* MapLibre popups on the night board */
-html.dark .maplibregl-popup-content {
-  background: var(--card);
-  color: var(--ink);
-}
-html.dark .maplibregl-popup-tip {
-  border-top-color: var(--card);
-  border-bottom-color: var(--card);
 }
