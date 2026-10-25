@@ -1,7 +1,7 @@
 {
-  "name": "caltrain-commuter-app-no-instrumentation",
+  "name": "caltrain-commuter",
   "version": "1.0.0",
-  "description": "",
+  "description": "Caltrain commuter board in an 1830 board-game style: next train, timetable, live trains on a hex line, weather and events.",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
@@ -11,15 +11,15 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/NathanNam/caltrain-commuter-app-no-instrumentation.git"
+    "url": "git+https://github.com/NathanNam/caltrain-commuter-app.git"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "bugs": {
-    "url": "https://github.com/NathanNam/caltrain-commuter-app-no-instrumentation/issues"
+    "url": "https://github.com/NathanNam/caltrain-commuter-app/issues"
   },
-  "homepage": "https://github.com/NathanNam/caltrain-commuter-app-no-instrumentation#readme",
+  "homepage": "https://github.com/NathanNam/caltrain-commuter-app#readme",
   "dependencies": {
     "@tailwindcss/postcss": "^4.1.14",
     "@types/node": "^24.7.2",

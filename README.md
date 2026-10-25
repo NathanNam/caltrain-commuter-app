@@ -1,647 +1,152 @@
-# Caltrain Commuter App
+# Caltrain Commuter
 
-A Next.js web application that helps Caltrain commuters plan their trips by providing real-time train schedules, delay tracking, weather information, and event crowding alerts for a better commuting experience.
+A Caltrain commuter board in the style of the **1830** railroad board game.
+It answers one question first, *when does my next train leave?*, and keeps
+the rest of the trip on the same board: departures, the line with live
+trains, the full schedule, weather and nearby events.
 
-![Caltrain Commuter](https://img.shields.io/badge/Next.js-15-black)
-![TypeScript](https://img.shields.io/badge/TypeScript-5-blue)
-![Tailwind CSS](https://img.shields.io/badge/Tailwind-4-38bdf8)
+Live: <https://caltrain-commuter.vercel.app>
 
-## 🚀 Live Demo
+<p>
+  <img src="docs/images/phone-first-screen.png" alt="Phone, first screen: route, a black 10 MIN block with the next train's time, type and on-time status" width="260">
+  <img src="docs/images/phone-night-board.png" alt="The same screen on the night board: dark table, cream ink" width="260">
+  <img src="docs/images/full-board-phone.png" alt="The full board on a phone: stations down the side, trains across, the next train highlighted" width="260">
+</p>
 
-**Try it now:** [https://caltrain-commuter.observe-demo.com/](https://caltrain-commuter.observe-demo.com/)
+![Desktop: next train, departures, schedule link, weather and events on the left; the hex line with live trains on the right](docs/images/desktop-full-page.png)
 
-The live demo is fully functional with real-time features enabled!
+## What it shows
 
-## 📸 Screenshots
+- **Next train first.** A black "N MIN" block with the departure time,
+  arrival, service type (Local / Limited / Express / South County as flat
+  "company charter" colours) and status in tile colours, always with text
+  (green on time, yellow late, brown very late, grey cancelled). It fits a
+  390 px phone's first screen.
+- **Departures.** The next five trains as cards with a minutes-to-go box.
+- **The line.** An original hex-tile strip of the whole line, San Francisco
+  to Gilroy: your trip in green, the rest in yellow, cities as white circles,
+  stops as dots. Every train reporting a position is a token with its real
+  number: red southbound, blue northbound, each pointing the way it is going;
+  trains on your route have a heavier rim. A text line lists them too.
+- **Full board.** The whole timetable for today, tomorrow or any of the next
+  seven days: stations down the side, trains across, per direction, with your
+  stops and the next train highlighted, PM times in bold and "↓" where a train
+  runs through. It says which schedule applies (weekday, weekend, holiday).
+- **Weather** for both ends of the trip and **events** near the line (Giants,
+  Warriors, Valkyries, 49ers, Sharks, Moscone conventions, concerts), shown as
+  double-bordered "certificates".
+- **Service alerts** from 511 in one collapsible bar.
+- Your route is remembered on the device and kept in the address
+  (`?from=sf&to=pa`), so links work. Saved routes live in the route picker.
+- A **night board** keeps the 1830 look on a dark table.
+- When something is not live (no key, feed down, timetable out of date) one
+  quiet note in the header says so; nothing is invented.
 
-<div align="center">
-  <img src="images/screenshot_01.png" alt="Caltrain Commuter App - Main Dashboard" width="800"/>
-  <p><em>Main dashboard showing train schedules, weather, and saved routes</em></p>
+<img src="docs/images/full-board-desktop.png" alt="Full board on desktop: Southbound, Sunday, every train with its times at every station" width="100%">
 
-  <img src="images/screenshot_02.png" alt="Caltrain Commuter App - Real-time Features" width="800"/>
-  <p><em>Real-time delay tracking and event crowding alerts</em></p>
-</div>
+<img src="docs/images/phone-full-page.png" alt="Phone, whole page" width="260">
 
-## Overview
+## Data sources
 
-This app provides comprehensive real-time information for Caltrain commuters across 23 main Caltrain stations from San Francisco to San Jose Diridon. Key capabilities include:
+| What | Source | Key |
+| --- | --- | --- |
+| Timetable | 511.org GTFS datafeed for Caltrain (falls back to `data/gtfs`) | `TRANSIT_API_KEY` |
+| Delays, cancellations, train positions, alerts | 511.org GTFS-Realtime | `TRANSIT_API_KEY` |
+| Weather | OpenWeatherMap current weather | `WEATHER_API_KEY` |
+| Concerts and other events | Ticketmaster Discovery API | `TICKETMASTER_API_KEY` |
+| Games | ESPN public schedules (Warriors, Valkyries, 49ers), MLB Stats API (Giants), NHL web API (Sharks) | none |
+| Conventions | SF Travel (Moscone Center) | none |
 
-- 🚆 **Real-time train delays** with triple-redundant delay tracking:
-  - Primary: 511.org GTFS-Realtime API
-  - Secondary: Caltrain.com alerts scraping (train-specific & system-wide)
-  - Tertiary: SimplifyTransit alerts scraping (system-wide delays)
-- 🌤️ **Live weather** for origin and destination stations
-- 🎫 **Event crowding alerts** for 9+ SF venues (Oracle Park, Chase Center, Moscone, etc.)
-- 📍 **23 active Caltrain stations** with GPS coordinates (excluding closed stations and South County Connector)
-- 💾 **Save up to 5 routes** for quick access
-- 🔄 **Auto-refresh** with optimized caching
+Realtime calls are shared: trip updates and vehicle positions are fetched
+together once a minute per server and reused by every visitor, well inside
+511's default limit of 60 requests an hour. The full board and future days
+use the static timetable only.
 
-**Ready to use immediately** - Works with mock data out of the box, configure API keys for real-time features.
+## Environment variables
 
-## Features
+Put these in `.env` locally (it is git-ignored) or in your host's settings.
+Names only; never commit the values.
 
-- **Station Selection**: Choose from 23 active Caltrain stations (SF to San Jose Diridon) with easy swap functionality
-  - **Note**: Inactive stations (Broadway, Atherton) have been removed as Caltrain no longer stops there
-  - **Note**: South County Connector stations (Tamien, Capitol, Blossom Hill, Morgan Hill, San Martin, Gilroy) are excluded as they're served by a separate 8XX bus service with limited schedule
-- **Train Schedules**: View next 5 upcoming trains with departure/arrival times and durations
-  - **Schedule-aware**: Automatically adjusts for weekday, weekend, and holiday schedules
-  - Weekday peak hours: More frequent trains (every 20 mins)
-  - Weekends: Reduced frequency (every 45 mins)
-  - Holidays: Special holiday schedule (every 60 mins)
-- **Real-Time Delay Tracking**: Triple-redundant delay detection for maximum reliability 🚦
-  - **Primary Source**: 511.org GTFS-Realtime API (most accurate, trip-specific delays)
-  - **Secondary Source**: Caltrain.com alerts web scraping (train-specific and system-wide delays)
-  - **Tertiary Source**: SimplifyTransit alerts scraping (system-wide delays as final backup)
-  - Visual indicators for on-time, delayed, early, or cancelled trains
-  - Delay duration displayed in minutes
-  - Color-coded status badges (green = on-time, orange = delayed, red = cancelled)
-  - Automatic failover when 511.org is unavailable
-  - En-route train support: Shows trains currently traveling (already departed but not yet arrived)
-- **Weather Information**: See current weather for both origin and destination stations
-- **Event Crowding Alerts**: See upcoming games and events at major SF Bay Area venues that may cause crowding 🏟️
-  - **🆕 Automated Sports Schedules** - Free, no API keys required!
-    - 🏀 **Warriors** (NBA) + **Valkyries** (WNBA) at Chase Center → affects SF, 22nd stations
-    - ⚾ **Giants** (MLB) at Oracle Park → affects SF, 22nd, Bayshore stations
-    - 🏈 **49ers** (NFL) at Levi's Stadium → affects Mountain View, Sunnyvale, Santa Clara stations
-    - 🏒 **Sharks** (NHL) at SAP Center → affects Diridon station (directly across the street!)
-  - **🎤 Moscone Center** (Tech conferences) - automatically fetched every 24 hours
-    - Dreamforce, Microsoft Ignite, TechCrunch Disrupt, PyTorch Conference, and more
-  - **🎵 Concerts & Events** via Ticketmaster API (optional)
-    - Bill Graham Civic Auditorium, The Fillmore, The Masonic, Warfield Theatre
-    - And more concert venues near 4th & King
-- **Saved Routes**: Save up to 5 frequently used routes for quick access
-- **Service Alerts**: Real-time service disruptions and notices from 511.org
-- **Auto-Refresh**: Data updates automatically (trains every 30s, weather every 10 min, events every 30 min, alerts every 5 min)
-- **Responsive Design**: Mobile-first design that works on all devices
+| Variable | Where to get it |
+| --- | --- |
+| `TRANSIT_API_KEY` | <https://511.org/open-data/token> (free) |
+| `WEATHER_API_KEY` | <https://openweathermap.org/api> (free tier, "Current weather") |
+| `TICKETMASTER_API_KEY` | <https://developer.ticketmaster.com/> (the Consumer Key) |
 
-## Tech Stack
+All three are optional. Without them the board still runs on the committed
+timetable and says that live data and the sample weather, alerts and events
+are not live.
 
-- **Framework**: Next.js 15 (App Router)
-- **Language**: TypeScript
-- **Styling**: Tailwind CSS v4
-- **APIs**:
-  - **Delay Data (triple-redundant)**:
-    - 511.org Transit API (GTFS-Realtime - primary source)
-    - Caltrain.com (web scraping - secondary source for train-specific & system-wide delays)
-    - SimplifyTransit.com (web scraping - tertiary source for system-wide delays)
-  - OpenWeatherMap API (weather data)
-  - **Sports APIs (all free, no keys required)**:
-    - ESPN NBA API (Warriors games)
-    - ESPN WNBA API (Valkyries games)
-    - MLB Stats API (Giants games)
-    - ESPN NFL API (49ers games)
-    - NHL Web API (Sharks games)
-  - SF Travel Convention Calendar (Moscone events - automatically scraped at runtime)
-  - Ticketmaster Discovery API (optional - for additional concert/event data)
-- **Data Format**: GTFS-Realtime Protocol Buffers
-- **Storage**: localStorage for saved routes
-- **Event Fetching**: Runtime web scraping with 24-hour caching
-- **Delay Scraping**: Puppeteer headless browser for Caltrain.com and SimplifyTransit alerts
+## Run locally
 
-## Getting Started
-
-### Prerequisites
-
-- Node.js 18+ installed
-- npm or yarn package manager
-
-### Installation
-
-1. Clone the repository:
-```bash
-git clone <repository-url>
-cd caltrain-commuter-app-no-instrumentation
-```
-
-2. Install dependencies:
 ```bash
 npm install
+npm run dev        # http://localhost:3000
+npm test           # Vitest: stations, timetable, realtime matching, time zones
+npm run lint
+npm run build
 ```
 
-3. Set up environment variables (optional for real data):
-```bash
-cp .env.local.example .env.local
-```
+Node 20 or newer.
 
-Edit `.env.local` and add your API keys:
-```
-# Transit data (optional)
-TRANSIT_API_KEY=your_511_api_key_here
+### Refresh the committed timetable
 
-# Weather data (optional)
-WEATHER_API_KEY=your_openweathermap_api_key_here
-
-# Event crowding alerts (optional - but recommended!)
-TICKETMASTER_API_KEY=your_consumer_key_here
-```
-
-4. Run the development server:
-```bash
-npm run dev
-```
-
-5. Open [http://localhost:3000](http://localhost:3000) in your browser
-
-## Real-Time Data Status
-
-| Feature | Current Status | Data Source | API Key Required |
-|---------|---------------|------------|------------------|
-| **Train Schedules** | ✅ Real schedules (from local GTFS) | Official Caltrain timetables | None (local files) |
-| **Train Delays** | Ready for real-time | 511.org GTFS-Realtime | `TRANSIT_API_KEY` |
-| **Service Alerts** | Ready for real-time | 511.org API | `TRANSIT_API_KEY` |
-| **Weather** | Ready for real-time | OpenWeatherMap | `WEATHER_API_KEY` |
-| **Event Crowding** | Ready for real-time | Ticketmaster API | `TICKETMASTER_API_KEY` |
-
-**The app uses REAL Caltrain schedules out of the box!**
-
-- Train times come from official GTFS data (stored in `/data/gtfs/`)
-- No API key needed for schedules - works offline
-- Configure API keys to add real-time delays, weather, and events
-
-## API Configuration
-
-### Quick Setup Summary
-
-Add these to your `.env.local` file to enable all real-time features:
+The app reads 511's timetable directly when `TRANSIT_API_KEY` is set. The copy
+in `data/gtfs` is the fallback for running without a key; refresh it when the
+board's note says the timetable has passed its end date:
 
 ```bash
-# 511.org - For real train schedules, delays, and service alerts
-TRANSIT_API_KEY=your_511_api_key_here
-
-# OpenWeatherMap - For real weather data
-WEATHER_API_KEY=your_openweathermap_api_key_here
-
-# Ticketmaster - For event crowding alerts
-TICKETMASTER_API_KEY=your_consumer_key_here
+node --env-file=.env scripts/update-gtfs.mjs
 ```
 
-### Detailed Setup Instructions
+### Icons and share image
 
-### 511.org Transit API (for train schedules and delays)
-
-1. Register for a free API key at [https://511.org/open-data/token](https://511.org/open-data/token)
-2. Add to `.env.local` as `TRANSIT_API_KEY`
-3. The app automatically uses real data when the key is present, including:
-   - **GTFS Static Schedule**: Real Caltrain timetables (weekday/weekend/holiday schedules)
-   - **GTFS-Realtime Trip Updates**: Real-time delay information for all trains
-   - **Service Alerts**: Live service disruptions and notices
-
-**What you get with TRANSIT_API_KEY configured:**
-- ✅ **Real Caltrain schedules** from official GTFS data
-  - Actual train times based on Caltrain's published timetables
-  - Automatic weekday, weekend, and holiday schedule detection
-  - Correct train numbers and service patterns
-- ✅ **Real-time train delay tracking** (delays shown in minutes)
-- ✅ **On-time status indicators** (on-time, delayed, cancelled)
-- ✅ **Service alert notifications** (track maintenance, schedule changes)
-- ✅ **24-hour schedule caching** (efficient data usage)
-- ✅ **Updates every 30 seconds** for maximum accuracy
-
-**Without the API key:** The app uses real Caltrain schedules from local GTFS files (no delays shown, schedule only)
-
-### OpenWeatherMap API (for weather)
-
-1. Register for a free API key at [https://openweathermap.org/api](https://openweathermap.org/api)
-   - Free tier: 1,000 calls/day, 60 calls/minute
-2. Add to `.env.local` as `WEATHER_API_KEY`
-3. The app automatically uses real weather data when the key is present
-
-**What you get with WEATHER_API_KEY configured:**
-- ✅ Real-time weather for each Caltrain station (using GPS coordinates)
-- ✅ Temperature, conditions, wind speed, humidity
-- ✅ Updates every 10 minutes
-- ✅ Automatic fallback to mock data if API fails
-
-**Without the API key:** The app generates realistic mock weather data based on station latitude
-
-### Ticketmaster API (for event crowding alerts)
-
-**RECOMMENDED** - Instant approval, comprehensive coverage ⭐
-
-1. Register at [https://developer.ticketmaster.com/](https://developer.ticketmaster.com/)
-2. Get your **Consumer Key** instantly after registration (no approval wait!)
-3. Copy the **Consumer Key** (NOT the Consumer Secret) to `.env.local` as `TICKETMASTER_API_KEY`
-4. Restart dev server
-
-**What you get with TICKETMASTER_API_KEY configured:**
-- ✅ Real-time events from **11+ major SF Bay Area venues**:
-  - **San Francisco:**
-    - Oracle Park (SF Giants games)
-    - Chase Center (Warriors games, major concerts)
-    - Moscone Center (tech conferences: Dreamforce, WWDC, etc.)
-    - Bill Graham Civic Auditorium (large concerts)
-    - The Fillmore, The Masonic, Warfield Theatre (music venues)
-    - August Hall, Regency Ballroom (concerts)
-  - **South Bay:**
-    - SAP Center (San Jose Sharks games, concerts)
-    - Levi's Stadium (SF 49ers games, major concerts)
-- ✅ Automatic crowd level detection (high/moderate/low)
-- ✅ Smart affected station mapping (shows which Caltrain stations are impacted)
-- ✅ Updates every 30 minutes
-- ✅ Free tier: 5,000 API calls/day
-
-**Without the API key:** No event crowding alerts are shown
-
-### Alternative Event APIs (optional)
-
-**MLB Stats API** (FREE - no key needed!)
-- No registration required
-- Perfect for SF Giants games at Oracle Park only
-- Official MLB API: `https://statsapi.mlb.com`
-
-**NBA API** (FREE - no key needed!)
-- No registration required
-- Perfect for Golden State Warriors games at Chase Center only
-- Official NBA stats API
-
-**SeatGeek API** (requires approval)
-- Register at [https://platform.seatgeek.com/](https://platform.seatgeek.com/)
-- Wait for approval (can take a few days)
-- Limited coverage
-
-**Note:** See [app/api/events/route.ts](app/api/events/route.ts) for detailed implementation examples. Ticketmaster is recommended as it provides the most comprehensive coverage with instant approval.
-
-### Moscone Center Events (Fully Automatic) ✨
-
-**Important:** Many Moscone Center events (conventions, conferences) are NOT listed on Ticketmaster because they don't sell tickets publicly.
-
-#### How It Works - Zero Maintenance Required!
-
-The app **automatically fetches** Moscone events at runtime:
-
-1. **Ticketmaster API** - Concerts, sports, public events (if API key configured)
-2. **Moscone Events** - **Automatically fetched from SF Travel at runtime** (cached for 24 hours)
-3. **Chase Center Events** - Manually maintained list (optional, for Warriors games)
-
-#### Automatic Runtime Fetching
-
-Moscone events are now **fetched automatically** every 24 hours:
-
-✅ **No scripts to run** - Events update automatically
-✅ **No manual maintenance** - App scrapes SF Travel convention calendar
-✅ **24-hour cache** - Minimizes requests, stays fresh
-✅ **Always up-to-date** - New events appear automatically
-✅ **Zero effort** - Just deploy and forget!
-
-**How it works:**
-- App fetches from https://portal.sftravel.com/calendar_public/home_sfdc.cfm
-- Parses upcoming Moscone conventions (next 6 months)
-- Caches results for 24 hours
-- Automatically refreshes when cache expires
-- Falls back to stale cache if fetch fails
-
-#### Optional: Manual Script (Not Needed)
-
-If you prefer to pre-generate events, you can optionally run:
+`app/icon.svg`, `app/favicon.ico`, `app/apple-icon.png` and
+`public/og-image.png` are generated:
 
 ```bash
-# Optional - only if you want to pre-generate events
-node scripts/update-moscone-events-auto.mjs
+npm i --no-save puppeteer-core
+node scripts/brand/make.mjs
 ```
 
-**But you don't need to!** The app handles everything automatically.
+## Deploy on Vercel (Hobby plan)
 
-**Currently tracked events (automatically updated):**
-- Dreamforce 2025 (Oct 14-16) - 170K attendees
-- PyTorch Conference 2025 (Oct 21-23) - 30K attendees
-- TechCrunch Disrupt 2025 (Oct 27-29) - 80K attendees
-- Microsoft Ignite 2025 (Nov 17-21) - 150K attendees
-- And ~15+ more events automatically
+1. Import the GitHub repository at <https://vercel.com/new>.
+2. Keep the detected Next.js settings.
+3. Add `TRANSIT_API_KEY`, `WEATHER_API_KEY` and `TICKETMASTER_API_KEY`
+   under Settings → Environment Variables.
+4. Deploy. The project is served at <https://caltrain-commuter.vercel.app>.
 
-**Why this matters:** Major conventions can bring 100K+ attendees and cause severe crowding at 4th & King and 22nd Street stations during peak commute hours. The app automatically tracks these to help you plan your commute.
+## Design
 
-## Project Structure
+The look borrows the spirit of the 1830 board game: cream paper with a faint
+hex pattern, heavy black rules, slab-serif numerals, flat tile colours and
+round railroad tokens. Every drawing here (the hex strip, the tokens, the "CT"
+mark, the share image) is original; no game artwork, map, or real railroad
+marks are used. Fonts are Zilla Slab and Inter via `next/font`.
+
+## Project layout
 
 ```
-caltrain-commuter-app-no-instrumentation/
-├── app/
-│   ├── api/
-│   │   ├── trains/route.ts      # Train schedule API endpoint with real-time delays
-│   │   ├── weather/route.ts     # Weather data API endpoint
-│   │   ├── events/route.ts      # Venue events API endpoint
-│   │   └── alerts/route.ts      # Service alerts API endpoint
-│   ├── layout.tsx               # Root layout with header/footer
-│   ├── page.tsx                 # Main dashboard page
-│   └── globals.css              # Global styles
-├── components/
-│   ├── StationSelector.tsx      # Origin/destination selector
-│   ├── TrainList.tsx            # Train schedule display with delay indicators
-│   ├── WeatherWidget.tsx        # Weather information
-│   ├── VenueEvents.tsx          # Event crowding alerts
-│   ├── ServiceAlerts.tsx        # Real-time service alerts display
-│   └── SavedRoutes.tsx          # Saved routes manager
-├── lib/
-│   ├── stations.ts              # All 29 Caltrain stations data (23 active + 6 South County)
-│   ├── types.ts                 # TypeScript interfaces
-│   ├── utils.ts                 # Utility functions
-│   ├── venues.ts                # Venue data for event tracking
-│   ├── moscone-events-fetcher.ts # Runtime Moscone events fetcher (auto-updates every 24h)
-│   ├── moscone-events.ts        # Legacy static Moscone events (no longer used)
-│   ├── chase-center-events.ts   # Chase Center events (Warriors, concerts)
-│   ├── gtfs-static.ts           # GTFS Static schedule parser
-│   ├── gtfs-realtime.ts         # GTFS-Realtime API utilities
-│   ├── caltrain-alerts-scraper.ts # Caltrain.com alerts scraper (train-specific & system-wide delays)
-│   ├── simplifytransit-scraper.ts # SimplifyTransit alerts scraper (system-wide delays)
-│   └── twitter-alerts-scraper.ts  # Twitter/X scraper (deprecated, no longer used)
-├── scripts/
-│   ├── README.md                # Documentation for helper scripts
-│   └── update-moscone-events.mjs # Script to update Moscone events monthly
-├── data/
-│   └── gtfs/                    # Official Caltrain GTFS schedule data
-│       ├── calendar.txt         # Service calendar (weekday/weekend)
-│       ├── calendar_dates.txt   # Holiday exceptions
-│       ├── trips.txt            # Train trips
-│       ├── stop_times.txt       # Actual train times
-│       └── stops.txt            # Station stops
-├── images/                      # Screenshots
-└── public/
-    └── icons/                   # Weather icons (if needed)
+app/                 page, full board (/board), API routes, icons
+  api/trains         next trains + live status + live trains (one request)
+  api/board          the whole line's timetable for a date
+  api/alerts, api/weather, api/events
+components/          board UI (CommuterBoard, LineStrip, FullBoard, …)
+lib/                 GTFS static + realtime, stations, Pacific time, schedules
+data/gtfs/           committed fallback timetable from 511
+scripts/             timetable refresh, brand image generator, Moscone helpers
+tests/               Vitest suites
 ```
 
-## GTFS Schedule Data
+## History
 
-The app includes official Caltrain schedule data in the `/data/gtfs/` directory:
-
-**Source**: [https://data.trilliumtransit.com/gtfs/caltrain-ca-us/caltrain-ca-us.zip](https://data.trilliumtransit.com/gtfs/caltrain-ca-us/caltrain-ca-us.zip)
-
-**What's included**:
-- ✅ **Real train times** from Caltrain's official timetables
-- ✅ **Actual train numbers** (123, 125, 127, etc.)
-- ✅ **Weekday/weekend/holiday schedules** automatically detected
-- ✅ **Schedule data for 29 Caltrain stations** (SF to Gilroy)
-  - App allows selection of 23 active stations (SF to San Jose Diridon)
-  - Inactive stations removed: Broadway, Atherton (Caltrain no longer stops)
-  - South County stations excluded from UI as they're served by 8XX bus connector
-- ✅ **Works offline** - no API key required for basic schedules
-
-**Updating the schedule**:
-```bash
-# Download latest GTFS data
-curl -L -o /tmp/caltrain-gtfs.zip https://data.trilliumtransit.com/gtfs/caltrain-ca-us/caltrain-ca-us.zip
-
-# Extract to data directory
-unzip -q /tmp/caltrain-gtfs.zip -d data/gtfs/
-```
-
-**Note**: GTFS data is typically updated when Caltrain changes their schedule (usually quarterly). The app automatically detects which schedule to use based on the current date.
-
-## Available Scripts
-
-### Development & Build
-- `npm run dev` - Start development server
-- `npm run build` - Build for production
-- `npm start` - Start production server
-- `npm run lint` - Run ESLint
-
-### Maintenance Scripts
-- `node scripts/update-moscone-events-auto.mjs` - **Optional** manual Moscone events update
-  - **Not needed** - Moscone events now fetch automatically at runtime!
-  - Only use if you want to pre-generate events or test the scraper
-  - See [scripts/README.md](scripts/README.md) for details
-
-## Features Roadmap
-
-### ✅ Phase 1 - MVP (Complete)
-- Station selection with 23 active stations (removed Broadway and Atherton - no longer in service)
-- Next 5 trains display
-- Weather for origin and destination
-- Saved routes (up to 5)
-- Service alerts
-- Auto-refresh functionality
-- Responsive design
-
-### ✅ Phase 2 - Real-Time Features (Complete)
-- ✅ Real-time train delay tracking via GTFS-Realtime
-- ✅ Service alerts from 511.org API
-- ✅ Event crowding alerts for 9+ SF venues
-- ✅ Visual delay indicators and status badges
-- ✅ Automatic Moscone events fetching (runtime scraping with 24h cache)
-
-### 🚧 Phase 3 - Advanced Features (Future)
-- Push notifications for delays
-- Historical delay analytics
-- Bike car availability tracking
-- Multi-leg journey planning
-- Trip planning with transfers
-
-## Browser Support
-
-- Chrome, Firefox, Safari, Edge (latest 2 versions)
-- iOS Safari, Chrome Mobile
-- Minimum viewport: 320px
-
-## Deployment
-
-### Deploy to Vercel (Recommended)
-
-1. Push your code to GitHub
-2. Import project on [Vercel](https://vercel.com)
-3. Add environment variables in Vercel dashboard
-4. Deploy!
-
-### Other Platforms
-
-The app can be deployed to any platform that supports Next.js:
-- Netlify
-- AWS Amplify
-- Digital Ocean App Platform
-- Self-hosted with Node.js
-
-## Contributing
-
-Contributions are welcome! Please feel free to submit a Pull Request.
+The app first ran on Railway with an observability demo setup. It now
+targets Vercel. The Chrome-based scrapers (caltrain.com alerts,
+SimplifyTransit, Twitter) and the simulated delays are gone: live data comes
+from 511 only, and when it is missing the board shows the timetable as
+scheduled and says so.
 
 ## License
 
 ISC
-
-## Acknowledgments
-
-- Built following the [Product Requirements Document](prd.md)
-- Real-time train data powered by Caltrain and 511.org GTFS-Realtime feeds
-- Weather data powered by OpenWeatherMap
-- Event data powered by Ticketmaster Discovery API
-- Icons from Heroicons
-
-## Support
-
-For issues and questions, please open an issue on GitHub.
-
----
-
-## How Real-Time Features Work
-
-### Train Delay Tracking
-
-The app uses a **triple-redundant delay detection system** with automatic failover for maximum reliability:
-
-#### Priority 1: GTFS-Realtime (511.org) - PRIMARY SOURCE
-1. **Trip Updates Feed**: Fetches real-time delay data every 30 seconds from 511.org
-2. **Protocol Buffers**: Uses industry-standard GTFS-Realtime format for efficient data transfer
-3. **Train-Specific Matching**: Each train's delay is matched by GTFS trip_id for accuracy
-   - Ensures Train 421's delay is shown for Train 421 (not confused with other trains at the same station)
-   - Checks maximum delay across all stops in the trip (captures delays that accumulate during the journey)
-   - Matches delay information as reported by 511.org's official feed
-
-#### Priority 2: Caltrain.com Alert Scraping - SECONDARY SOURCE
-4. **Automated Web Scraping**: Uses Puppeteer to scrape https://www.caltrain.com/alerts in real-time
-   - Parses official Caltrain PADS alerts (Passenger Alert and Display System)
-   - Extracts **train-specific delays** from patterns like "Please Expect Up To 40-45 Minute Delay for Train 165"
-   - Detects **system-wide delays** like "Expect 30-60 Minute Delay For All Trains Near San Jose Diridon"
-   - Handles directional delays (northbound, southbound, or both directions)
-5. **Smart Priority System**:
-   - **GTFS-RT is always checked first** (most accurate, trip-specific)
-   - **Caltrain alerts fill gaps** when GTFS-RT shows 0 delay but alerts indicate a delay
-   - **System-wide delays** apply to all trains in the affected direction
-   - This solves cases where 511.org data is incomplete or stale
-
-#### Priority 3: SimplifyTransit Alert Scraping - TERTIARY SOURCE
-6. **Final Backup System**: Uses Puppeteer to scrape https://app.simplifytransit.com/alerts/caltrain
-   - Provides **system-wide delay information** as a last-resort backup
-   - Extracts delay patterns like "Please Continue to Expect Up to 30-60 Delay for All Trains"
-   - Only used when both GTFS-RT and Caltrain.com alerts show no delays
-   - Ensures delay information is always available even when primary sources fail
-
-#### Advanced Features
-7. **Delay-Aware Filtering**:
-   - Trains filter based on **actual arrival time** (scheduled + delay), not just scheduled time
-   - Shows **en-route trains**: Trains that have departed but haven't arrived yet (currently traveling)
-   - Delayed trains appear in schedules even if their scheduled departure has passed
-   - Handles delays of any duration (including delays longer than 1 hour)
-
-#### Display & Features
-8. **Schedule Awareness**: Automatically handles different schedules:
-   - **Weekday schedule**: More frequent trains during peak hours (6-9am, 4-7pm)
-   - **Weekend schedule**: Reduced service on Saturdays and Sundays
-   - **Holiday schedule**: Special service on major US holidays (New Year's, Memorial Day, Independence Day, Labor Day, Thanksgiving, Christmas)
-   - Real-time API automatically provides correct schedule based on current date
-9. **Delay Detection**:
-   - Compares scheduled vs. actual times at each stop
-   - **Delay threshold**: Shows trains as "delayed" when 1 minute or more late
-   - Uses the maximum delay across all stops to capture delays accumulated during the journey
-10. **Visual Indicators**:
-   - 🟢 Green badge = On time (0 minutes delay)
-   - 🟠 Orange badge = Delayed (1+ minutes - shows exact delay)
-   - 🔴 Red badge = Cancelled
-11. **Service Alerts**: Displays system-wide disruptions and maintenance notices
-
-#### Why Triple-Redundant?
-
-**Problem**: GTFS-Realtime can sometimes be delayed in reporting or may not have complete delay information for all trains.
-
-**Solution**: The app uses three independent sources with smart priority:
-- **GTFS-RT (PRIMARY)**: Most accurate when available, updates every 30 seconds
-- **Caltrain.com (SECONDARY)**: Official Caltrain alerts, provides both train-specific and system-wide delay info
-- **SimplifyTransit (TERTIARY)**: Community-sourced system-wide delays as final backup
-
-**Result**: Maximum reliability - the app always shows the most accurate delay information available, even if one or two sources fail.
-
-### Weather Data
-
-- Fetches current weather from **OpenWeatherMap API** using GPS coordinates for each station
-- Updates every 10 minutes
-- Displays temperature, conditions, wind speed, and humidity
-- Converts metric to imperial units (Celsius → Fahrenheit, m/s → mph)
-
-### Event Crowding Alerts
-
-The app now features a **multi-source event detection system** that automatically fetches games and events from official sports APIs and venue sources:
-
-#### Automated Sports Schedule Integration (NEW!)
-
-**No API keys required** - all sports APIs are free and work out of the box:
-
-1. **🏀 NBA (Golden State Warriors)**
-   - Source: ESPN NBA API
-   - Venue: Chase Center, San Francisco
-   - Affected Stations: 4th & King, 22nd Street
-   - Auto-detects: Regular season, preseason, playoff games
-
-2. **🏀 WNBA (Golden State Valkyries)**
-   - Source: ESPN WNBA API
-   - Venue: Chase Center, San Francisco
-   - Affected Stations: 4th & King, 22nd Street
-   - Auto-detects: Regular season, preseason, playoff games
-
-3. **⚾ MLB (SF Giants)**
-   - Source: MLB Stats API (official)
-   - Venue: Oracle Park, San Francisco
-   - Affected Stations: 4th & King, 22nd Street, Bayshore
-   - Auto-detects: Regular season, spring training, playoff games
-
-4. **🏈 NFL (SF 49ers)**
-   - Source: ESPN NFL API
-   - Venue: Levi's Stadium, Santa Clara
-   - Affected Stations: Mountain View, Sunnyvale, Santa Clara
-   - Note: Fans typically take Caltrain to Mountain View + VTA light rail
-   - Auto-detects: Regular season, preseason, playoff games
-
-5. **🏒 NHL (San Jose Sharks)**
-   - Source: NHL Web API (official)
-   - Venue: SAP Center, San Jose
-   - Affected Stations: San Jose Diridon (directly across the street!)
-   - Auto-detects: Regular season, preseason, playoff games
-
-#### Additional Event Sources
-
-6. **🎤 Moscone Center Events** (Tech Conferences)
-   - Source: SF Travel Convention Calendar (auto-scraped every 24h)
-   - Major events: Dreamforce, Microsoft Ignite, TechCrunch Disrupt, PyTorch Conference
-   - Affected Stations: 4th & King, 22nd Street
-
-7. **🎫 Ticketmaster Events** (Concerts & Other Events)
-   - Source: Ticketmaster Discovery API (requires API key)
-   - 11+ SF Bay Area venues including Bill Graham, The Fillmore, The Masonic, Warfield
-   - Geographic filtering ensures only SF Bay Area events
-
-#### Smart Features
-
-- **Pacific Time Zone Handling**: All games are correctly matched to their Pacific Time date
-  - Date parameters are parsed as Pacific Time (not UTC midnight)
-  - Game times are compared using Pacific Time dates
-  - A 7pm PDT game shows up on the correct day, not shifted by UTC conversion
-  - Ensures Warriors/Giants/49ers/Sharks/Valkyries games appear on the day fans expect
-- **Intelligent crowd level detection** based on:
-  - Venue capacity (Oracle Park, Chase Center, Levi's Stadium, SAP Center = high)
-  - Event type (sports games, major concerts, tech conferences)
-  - Ticket prices and popularity
-- **Smart station mapping**: Shows which Caltrain stations are affected by each event
-- **Automatic deduplication**: Combines data from multiple sources without showing duplicate events
-- **Priority system**: Official sports APIs > Moscone events > Ticketmaster > Manual lists
-- Updates every 30 minutes with 30-minute cache
-
-### Train Schedule Architecture
-
-The app uses a sophisticated two-layer approach for maximum accuracy:
-
-**Layer 1: GTFS Static Schedule (Base Timetable)**
-1. Fetches official Caltrain GTFS data from Trillium Transit CDN
-2. Parses `calendar.txt` and `calendar_dates.txt` to determine active service (weekday/weekend/holiday)
-3. Reads `trips.txt` and `stop_times.txt` for actual train times
-4. Caches schedule data for 24 hours (refreshes daily)
-5. Provides baseline schedule with correct train numbers and times
-
-**Layer 2: GTFS-Realtime (Live Updates)**
-1. Fetches live trip updates from 511.org every 30 seconds
-2. **Matches delays by trip_id** to ensure each train gets its own accurate delay status
-3. **Checks maximum delay** across all stops in each trip (not just the first stop)
-4. Applies delays to scheduled trains based on exact trip matching
-5. Updates train status (on-time, delayed, cancelled) per-train
-   - Trains with 0 minutes delay → "On time"
-   - Trains with 1+ minutes delay → "Delayed" (shows exact minutes)
-   - Cancelled trains → "Cancelled"
-6. Combines with Layer 1 for complete picture
-
-**Result**: Users see real Caltrain train numbers and schedule times, enhanced with train-specific live delay information from 511.org's official GTFS-Realtime feed.
-
-### Data Flow Architecture
-
-```
-User Request → Next.js API Route → GTFS Static + GTFS-Realtime APIs → Data Processing → Cache → User Response
-                                          ↓
-                            Trillium Transit (schedules, 24h cache)
-                                          +
-                                 511.org (delays, 30s cache)
-```
-
-**Note**: All real-time features gracefully fall back to intelligent mock data if API keys are not configured or if APIs fail. The app is fully functional without any API keys.
