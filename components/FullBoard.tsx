@@ -138,7 +138,9 @@ export default function FullBoard() {
   const jumpToNow = () => {
     const el = scroller.current?.querySelector<HTMLElement>('th.is-next');
     if (el && scroller.current) {
-      scroller.current.scrollTo({ left: el.offsetLeft - 140, behavior: 'smooth' });
+      // Align the next train's column with the edge of the sticky station column.
+      const corner = scroller.current.querySelector<HTMLElement>('th.fb-corner');
+      scroller.current.scrollTo({ left: el.offsetLeft - (corner?.offsetWidth ?? 0), behavior: 'smooth' });
     }
   };
   // Start Today scrolled to the next train.
@@ -251,7 +253,9 @@ export default function FullBoard() {
                   <th
                     key={t.number}
                     scope="col"
-                    className={`fb-train ${TYPE_TAG[t.type].cls}${t.number === nextNumber ? ' is-next' : ''}`}
+                    className={`fb-train ${TYPE_TAG[t.type].cls}${t.number === nextNumber ? ' is-next' : ''}${
+                      isToday && refSecs(t) < nowSecs ? ' is-past' : ''
+                    }`}
                   >
                     <span className="fb-num">{t.number}</span>
                     <abbr className={`tt-tag ${TYPE_TAG[t.type].cls}`} title={t.type}>
@@ -273,7 +277,10 @@ export default function FullBoard() {
                     </th>
                     {trains.map((t) => {
                       const c = t.cells[si];
-                      const past = isToday && lastSecs(t) < nowSecs;
+                      // Dim what has already happened: a stop time in the past, or a
+                      // pass marker on a train that has finished its run.
+                      const past =
+                        isToday && (typeof c === 'number' ? c < nowSecs : c === 'pass' && lastSecs(t) < nowSecs);
                       const cls = `${t.number === nextNumber ? 'is-next' : ''}${past ? ' is-past' : ''}`;
                       return (
                         <td key={t.number} className={cls || undefined}>
