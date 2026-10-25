@@ -765,35 +765,99 @@ body {
   }
 }
 
-/* ---------- route timetable (printed-timetable grid) ---------- */
+/* ---------- route timetable (printed-timetable style) ---------- */
 .ttbox {
-  padding: 12px;
+  padding: 12px 14px 14px;
   display: flex;
   flex-direction: column;
   gap: 10px;
 }
 
-.tt-days {
+.tt-head {
   display: flex;
+  align-items: center;
+  gap: 10px;
   flex-wrap: wrap;
-  gap: 6px;
 }
 
-.tt-day,
-.tt-more select {
+.tt-head .rule-h {
+  flex: 1 1 140px;
+}
+
+.tt-toggle,
+.tt-hide-bottom {
   min-height: 40px;
-  border: 2px solid var(--ink);
-  border-radius: 4px;
-  background: var(--badge-bg);
-  color: var(--ink);
-  font: 700 13px var(--font-sans), sans-serif;
   padding: 6px 12px;
+  font-size: 13px;
+}
+
+.tt-hide-bottom {
+  margin-top: 10px;
+}
+
+/* segmented day control */
+.seg {
+  display: flex;
+  border: 3px solid var(--ink);
+  border-radius: 6px;
+  overflow: hidden;
+  background: var(--card);
+  width: 100%;
+  max-width: 420px;
+}
+
+.seg-btn,
+.seg-sel select {
+  flex: 1;
+  min-height: 42px;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  font: 700 14px var(--font-sans), sans-serif;
+  padding: 6px 10px;
   cursor: pointer;
 }
 
-.tt-day.on {
+.seg > * + * {
+  border-left: 2px solid var(--ink);
+}
+
+.seg-btn[aria-pressed='true'],
+.seg-sel.on {
   background: var(--ink);
   color: var(--on-ink);
+}
+
+.seg-btn:focus-visible,
+.seg-sel select:focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: -5px;
+}
+
+.seg-sel {
+  flex: 1.2;
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.seg-sel select {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 100%;
+  padding-right: 26px;
+  color: inherit;
+}
+
+.seg-sel select option {
+  color: #1b1a17;
+  background: #fff;
+}
+
+.seg-sel svg {
+  position: absolute;
+  right: 10px;
+  pointer-events: none;
 }
 
 .tt-sched {
@@ -802,123 +866,189 @@ body {
   color: var(--ink-2);
   display: flex;
   flex-wrap: wrap;
-  gap: 4px 8px;
+  gap: 4px 10px;
   align-items: center;
 }
 
 .tt-sched strong {
   color: var(--ink);
+  font: 700 15px var(--font-slab), serif;
+}
+
+.tt-sched > span:not(.tt-exc)::before {
+  content: '·';
+  margin-right: 10px;
 }
 
 .tt-exc {
   font: 800 11px var(--font-sans), sans-serif;
   letter-spacing: 1px;
   text-transform: uppercase;
-  border: 2px solid var(--ink);
   border-radius: 3px;
-  padding: 0 6px;
+  padding: 1px 6px;
   background: var(--tile-yellow);
   color: var(--on-tile);
 }
 
-.tt-toggle {
-  align-self: flex-start;
+.tt-exc::before {
+  content: none !important;
+}
+
+.tt-sum {
+  margin: 0;
+  font: 700 13px var(--font-sans), sans-serif;
+  color: var(--ink);
+  border-top: 2px solid var(--ink);
+  border-bottom: 1px solid var(--ink);
+  padding: 5px 0;
+}
+
+.tt-legend {
+  margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  font-size: 12px;
+  color: var(--ink-2);
 }
 
 .tt-none {
-  font: 700 17px var(--font-slab), serif;
-  margin: 4px 0 6px;
+  font: 700 18px var(--font-slab), serif;
+  margin: 2px 0 8px;
 }
 
-.tt {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 13px;
-  font-variant-numeric: tabular-nums;
-  table-layout: auto;
+/* type tags: flat charter colours, letters carry the meaning too */
+.tt-tag {
+  display: inline-block;
+  min-width: 18px;
+  text-align: center;
+  font: 800 9.5px/1 var(--font-sans), sans-serif;
+  letter-spacing: 0.5px;
+  text-decoration: none;
+  border-radius: 2px;
+  padding: 3px 4px;
+  color: #1b1a17;
+  vertical-align: 1px;
+}
+.tt-tag.local {
+  background: var(--co-lblue);
+}
+.tt-tag.limited {
+  background: var(--co-orange);
+}
+.tt-tag.express {
+  background: var(--co-red);
+  color: #fff;
+}
+.tt-tag.south-county {
+  background: var(--co-green);
+  color: #fff;
 }
 
-.tt th {
-  font: 800 10px var(--font-sans), sans-serif;
-  letter-spacing: 1px;
-  text-transform: uppercase;
-  color: var(--ink-2);
-  text-align: left;
-  border-bottom: 2px solid var(--ink);
-  padding: 4px 4px 4px 0;
+/* hour groups */
+.tth {
+  list-style: none;
+  margin: 0;
+  padding: 0;
 }
 
-.tt td {
+.tth-hour {
+  display: grid;
+  grid-template-columns: 46px minmax(0, 1fr);
+  gap: 8px;
+  padding: 5px 0;
   border-bottom: 1px solid var(--grid);
-  padding: 5px 4px 5px 0;
+}
+
+.tth-h {
+  font: 700 13px var(--font-slab), serif;
+  text-align: right;
+  padding-top: 4px;
+  font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
 
-.tt td:first-child {
-  font: 700 14px var(--font-slab), serif;
+.tth-trains {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(116px, 1fr));
+  gap: 2px 8px;
 }
 
-.tt tr.is-next td {
-  background: var(--tile-green);
-  color: #0d2a06;
+.tte {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  grid-template-rows: auto auto;
+  column-gap: 6px;
+  align-items: baseline;
+  padding: 3px 4px 3px;
+  border-radius: 4px;
+  font-variant-numeric: tabular-nums;
 }
 
-.tt tr.is-next td:first-child {
-  box-shadow: inset 4px 0 0 #1b1a17;
-  padding-left: 6px;
+.tte-dep {
+  grid-row: 1 / 3;
+  font: 700 21px/1 var(--font-slab), serif;
+  min-width: 34px;
+  text-align: right;
+  position: relative;
 }
 
-.tt tr.is-cancelled td:not(:last-child) {
-  text-decoration: line-through;
-  opacity: 0.65;
+.tte-arr {
+  font-size: 12.5px;
+  color: var(--ink);
+  white-space: nowrap;
 }
 
-.charter.tt-type {
-  font-size: 11px;
-  padding: 0 5px 0 1px;
-  gap: 4px;
-  border-width: 1.5px;
+.tte-meta {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  font-size: 11.5px;
+  color: var(--ink-2);
+  white-space: nowrap;
 }
 
-.charter.tt-type i {
-  width: 11px;
-  height: 11px;
-  border-width: 1.5px;
+.tte-st {
+  font-weight: 800;
 }
-
-.tt-status {
-  font-size: 12px;
-  font-weight: 700;
-}
-.tt-status.late {
+.tte-st.late {
   color: #7a5a00;
 }
-.tt-status.verylate,
-.tt-status.cancel {
+.tte-st.verylate,
+.tte-st.cancel {
   color: var(--co-red);
 }
-.tt-status.sched {
-  color: var(--ink-2);
-  font-weight: 600;
-}
-html.dark .tt-status.late {
+html.dark .tte-st.late {
   color: var(--tile-yellow);
 }
-.tt tr.is-next .tt-status {
+
+.tte.is-next {
+  background: var(--tile-green);
+  color: #0d2a06;
+  box-shadow: inset 4px 0 0 #1b1a17;
+}
+.tte.is-next .tte-arr,
+.tte.is-next .tte-meta {
   color: #0d2a06;
 }
 
-@media (max-width: 420px) {
-  .tt {
-    font-size: 12px;
-  }
-  .tt td:first-child {
-    font-size: 13px;
-  }
-  .tt th,
-  .tt td {
-    padding-right: 3px;
-  }
+.tte-next {
+  font: 800 9px/1 var(--font-sans), sans-serif;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  background: #1b1a17;
+  color: #f2e8cf;
+  border-radius: 2px;
+  padding: 2px 4px;
+}
+
+.tte.is-cancelled .tte-dep,
+.tte.is-cancelled .tte-arr {
+  text-decoration: line-through;
+  opacity: 0.6;
 }
 
 .tt-links {

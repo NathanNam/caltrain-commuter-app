@@ -67,9 +67,10 @@ export function minutesUntil(iso: string, now: number): number {
 /** Countdown text: "8" / "1:05" for long waits, with its unit. */
 export function countdown(mins: number): { value: string; unit: string; long: boolean } {
   if (mins >= 100) {
+    // Hours and minutes, never a clock-like "9:57": "9h" over "57 MIN".
     const h = Math.floor(mins / 60);
     const m = mins % 60;
-    return { value: `${h}:${m.toString().padStart(2, '0')}`, unit: 'HRS', long: true };
+    return { value: `${h}h`, unit: `${m.toString().padStart(2, '0')} MIN`, long: false };
   }
   return { value: String(mins), unit: 'MIN', long: false };
 }

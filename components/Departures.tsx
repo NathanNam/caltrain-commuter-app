@@ -1,11 +1,26 @@
 import { Station, Train } from '@/lib/types';
 import { formatTime, formatDuration } from '@/lib/utils';
+import { addDays, yyyymmdd } from '@/lib/pacific-time';
+import { currentServiceDate, WEEKDAY_NAMES } from '@/lib/service-day';
 import { countdown, lineStations, minutesUntil, nearestLineStation, plainName } from '@/lib/board';
 import { CHARTER_COLOR, CharterBadge, StatusChip } from './TrainBadges';
 
 function departsFrom(station: Station): string {
   const paren = station.name.match(/\((.*)\)/);
   return paren ? paren[1] : plainName(station);
+}
+
+/** "tomorrow" (or a weekday) when the train runs on a later service day than now. */
+function dayWord(train: Train, now: number): string | null {
+  const cur = currentServiceDate(new Date(now));
+  const curStr = yyyymmdd(cur.year, cur.month, cur.day);
+  if (!train.serviceDate || train.serviceDate <= curStr) return null;
+  const next = addDays(cur.year, cur.month, cur.day, 1);
+  if (train.serviceDate === yyyymmdd(next.year, next.month, next.day)) return 'tomorrow';
+  const y = Number(train.serviceDate.slice(0, 4));
+  const m = Number(train.serviceDate.slice(4, 6));
+  const d = Number(train.serviceDate.slice(6));
+  return WEEKDAY_NAMES[new Date(Date.UTC(y, m - 1, d)).getUTCDay()];
 }
 
 function livePositionText(train: Train, liveFeed: boolean): string {
@@ -34,6 +49,7 @@ export function NextTrainHero({ train, origin, destination, now, liveFeed }: Her
   const mins = minutesUntil(train.departureTime, now);
   const cd = countdown(mins);
   const live = livePositionText(train, liveFeed);
+  const laterDay = dayWord(train, now);
   const spoken = mins === 0 ? 'departing now' : `departs in ${mins} minutes`;
 
   return (
@@ -44,7 +60,7 @@ export function NextTrainHero({ train, origin, destination, now, liveFeed }: Her
       </div>
       <div className="body">
         <h2 className="label" id="next-train-label" style={{ margin: 0 }}>
-          Next train &middot; leaves {departsFrom(origin)}
+          Next train{laterDay ? ` · ${laterDay}` : ''} &middot; leaves {departsFrom(origin)}
           <span className="sr-only">, {spoken}</span>
         </h2>
         <div className="dep">

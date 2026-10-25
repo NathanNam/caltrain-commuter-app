@@ -1,10 +1,10 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { Train, TrainType } from '@/lib/types';
 import { formatTime } from '@/lib/utils';
 import { statusOf } from '@/lib/board';
-import { addDays, isoDate } from '@/lib/pacific-time';
+import { addDays, isoDate, pacificParts } from '@/lib/pacific-time';
 import { currentServiceDate, WEEKDAY_NAMES } from '@/lib/service-day';
 
 export interface ServiceDayInfo {
@@ -34,7 +34,13 @@ const OPEN_KEY = 'caltrain_timetable_open';
 // Caltrain's own schedules page (linked from caltrain.com's navigation).
 const CALTRAIN_TIMETABLE_URL = 'https://www.caltrain.com/schedules/pdfs';
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-const SHORT_TYPE: Record<TrainType, string> = { Local: 'Local', Limited: 'Ltd', Express: 'Exp', 'South County': 'S. Cty' };
+
+export const TYPE_TAG: Record<TrainType, { tag: string; cls: string }> = {
+  Local: { tag: 'L', cls: 'local' },
+  Limited: { tag: 'LTD', cls: 'limited' },
+  Express: { tag: 'EXP', cls: 'express' },
+  'South County': { tag: 'SC', cls: 'south-county' },
+};
 
 /** "Sat 31 Oct" for a YYYY-MM-DD date. */
 export function dayLabel(date: string): string {
@@ -68,59 +74,125 @@ function writeOpen(open: boolean) {
   }
 }
 
-function TypeCell({ type }: { type: TrainType }) {
+function hourLabel(h: number): string {
+  const h12 = h % 12 === 0 ? 12 : h % 12;
+  return `${h12} ${h < 12 ? 'AM' : 'PM'}`;
+}
+
+/** Trains grouped by the Pacific clock hour they leave in, in order. */
+function byHour(trains: Train[]): { hour: number; trains: Train[] }[] {
+  const groups: { hour: number; trains: Train[] }[] = [];
+  for (const t of trains) {
+    const hour = pacificParts(new Date(t.departureTime)).hour;
+    const last = groups[groups.length - 1];
+    if (last && last.hour === hour) last.trains.push(t);
+    else groups.push({ hour, trains: [t] });
+  }
+  return groups;
+}
+
+function minutesOf(iso: string): string {
+  return `:${String(pacificParts(new Date(iso)).minute).padStart(2, '0')}`;
+}
+
+function TypeTag({ type }: { type: TrainType }) {
+  const t = TYPE_TAG[type];
   return (
-    <span className={`charter tt-type ${type.toLowerCase().replace(' ', '-')}`} title={type}>
-      <i aria-hidden="true" />
-      <span aria-hidden="true">{SHORT_TYPE[type]}</span>
-      <span className="sr-only">{type}</span>
-    </span>
+    <abbr className={`tt-tag ${t.cls}`} title={type}>
+      {t.tag}
+    </abbr>
   );
 }
 
-function StatusCell({ train }: { train: Train }) {
-  const { kind, text } = statusOf(train);
-  const short = kind === 'late' || kind === 'verylate' ? text.replace(' min late', ' late') : text;
-  return <span className={`tt-status ${kind}`}>{short}</span>;
+interface GridProps {
+  trains: Train[];
+  live: boolean;
+  nextKey?: string;
+  showType: boolean;
+  showRide: boolean;
 }
 
-function Rows({ trains, nextKey }: { trains: Train[]; nextKey?: string }) {
+/** A printed-style timetable: one block per hour, departure minutes large. */
+function HourGrid({ trains, live, nextKey, showType, showRide }: GridProps) {
   return (
-    <table className="tt">
-      <thead>
-        <tr>
-          <th scope="col">Departs</th>
-          <th scope="col">Arrives</th>
-          <th scope="col">Train</th>
-          <th scope="col">Type</th>
-          <th scope="col">Ride</th>
-          <th scope="col">Status</th>
-        </tr>
-      </thead>
-      <tbody>
-        {trains.map((t) => {
-          const key = `${t.serviceDate}-${t.trainNumber}`;
-          const isNext = key === nextKey;
-          return (
-            <tr key={key} className={`${isNext ? 'is-next' : ''}${t.status === 'cancelled' ? ' is-cancelled' : ''}`}>
-              <td>
-                {formatTime(t.departureTime)}
-                {isNext && <span className="sr-only"> (next train)</span>}
-              </td>
-              <td>{formatTime(t.arrivalTime)}</td>
-              <td>{t.trainNumber}</td>
-              <td>
-                <TypeCell type={t.type} />
-              </td>
-              <td>{t.duration}m</td>
-              <td>
-                <StatusCell train={t} />
-              </td>
-            </tr>
-          );
-        })}
-      </tbody>
-    </table>
+    <ol className="tth">
+      {byHour(trains).map((g) => (
+        <li key={`${g.hour}-${g.trains[0].departureTime}`} className="tth-hour">
+          <span className="tth-h">{hourLabel(g.hour)}</span>
+          <ul className="tth-trains">
+            {g.trains.map((t) => {
+              const key = `${t.serviceDate}-${t.trainNumber}`;
+              const isNext = key === nextKey;
+              const st = live ? statusOf(t) : null;
+              const notable = st && st.kind !== 'on' && st.kind !== 'sched';
+              return (
+                <li
+                  key={key}
+                  className={`tte${isNext ? ' is-next' : ''}${t.status === 'cancelled' ? ' is-cancelled' : ''}`}
+                  aria-label={`${formatTime(t.departureTime)} to ${formatTime(t.arrivalTime)}, train ${t.trainNumber}, ${t.type}${
+                    showRide ? `, ${t.duration} minute ride` : ''
+                  }${notable ? `, ${st!.text}` : ''}${isNext ? ', next train' : ''}`}
+                >
+                  <span className="tte-dep" aria-hidden="true">
+                    {minutesOf(t.departureTime)}
+                  </span>
+                  <span className="tte-arr" aria-hidden="true">
+                    &rarr; {formatTime(t.arrivalTime).replace(' ', ' ')}
+                  </span>
+                  <span className="tte-meta" aria-hidden="true">
+                    {showType && <TypeTag type={t.type} />}
+                    <span className="tte-num">{t.trainNumber}</span>
+                      {isNext && <span className="tte-next">Next</span>}
+                    {showRide && <span className="tte-ride">{t.duration}m</span>}
+                    {notable && (
+                      <span className={`tte-st ${st!.kind}`}>
+                        {st!.kind === 'late' || st!.kind === 'verylate' ? `+${t.delay}` : st!.text}
+                      </span>
+                    )}
+                  </span>
+                </li>
+              );
+            })}
+          </ul>
+        </li>
+      ))}
+    </ol>
+  );
+}
+
+function Summary({ trains, live }: { trains: Train[]; live: boolean }) {
+  const types = new Set(trains.map((t) => t.type));
+  const rides = new Set(trains.map((t) => t.duration));
+  const parts: string[] = [];
+  if (types.size === 1) parts.push(`All trains: ${[...types][0]}`);
+  if (rides.size === 1) parts.push(`${[...rides][0]}-minute ride`);
+  if (!live) parts.push('Timetable · no live data');
+  return (
+    <>
+      {parts.length > 0 && <p className="tt-sum">{parts.join(' · ')}</p>}
+      {types.size > 1 && (
+        <p className="tt-legend">
+          {(Object.keys(TYPE_TAG) as TrainType[])
+            .filter((t) => types.has(t))
+            .map((t) => (
+              <span key={t}>
+                <TypeTag type={t} /> {t}
+              </span>
+            ))}
+        </p>
+      )}
+    </>
+  );
+}
+
+function Block({ trains, live, nextKey }: { trains: Train[]; live: boolean; nextKey?: string }) {
+  const showType = new Set(trains.map((t) => t.type)).size > 1;
+  const showRide = new Set(trains.map((t) => t.duration)).size > 1;
+  return (
+    <>
+      <Summary trains={trains} live={live} />
+      <HourGrid trains={trains} live={live} nextKey={nextKey} showType={showType} showRide={showRide} />
+    </>
   );
 }
 
@@ -150,89 +222,137 @@ export default function Timetable({ originId, destinationId, today, now, boardHr
   }, [day, date, originId, destinationId, other]);
 
   const isToday = day === 0;
-  const expanded = isToday ? open : true;
+  const expanded = open;
+  const bodyId = useId();
+  const sectionRef = useRef<HTMLElement>(null);
   const data = isToday ? today : other[date];
   const info = isToday ? today?.info : data && data !== 'error' ? data.info : undefined;
 
   const remaining = today?.remaining ?? [];
-  const nextTrain = remaining.find((t) => t.status !== 'cancelled' && new Date(t.departureTime).getTime() >= now - 60000);
+  const nextTrain = remaining.find(
+    (t) => t.status !== 'cancelled' && new Date(t.departureTime).getTime() >= now - 60000,
+  );
   const nextKey = nextTrain ? `${nextTrain.serviceDate}-${nextTrain.trainNumber}` : undefined;
 
-  const toggle = () => {
-    writeOpen(!open);
-    setOpen(!open);
+  const setOpenSaved = (v: boolean) => {
+    writeOpen(v);
+    setOpen(v);
+  };
+  const pickDay = (i: number) => {
+    setDay(i);
+    if (i > 0) setOpenSaved(true); // another day: show its timetable
+  };
+  const collapseFromBottom = () => {
+    setOpenSaved(false);
+    requestAnimationFrame(() => sectionRef.current?.scrollIntoView({ block: 'start', behavior: 'smooth' }));
   };
 
+  const count = isToday ? remaining.length : data && data !== 'error' && 'trains' in data ? data.trains.length : null;
+  const showLabel =
+    count == null
+      ? 'Show timetable'
+      : isToday
+        ? count > 0
+          ? `Show all ${count} remaining ${count === 1 ? 'train' : 'trains'}`
+          : 'Show timetable'
+        : `Show all ${count} ${count === 1 ? 'train' : 'trains'}`;
+  const chevron = (up: boolean) => (
+    <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
+      <path d={up ? 'M2 8l4-4 4 4' : 'M2 4l4 4 4-4'} stroke="currentColor" strokeWidth="2" fill="none" />
+    </svg>
+  );
+
   return (
-    <section className="panel ttbox" aria-labelledby="timetable-h">
+    <section className="panel ttbox" aria-labelledby="timetable-h" ref={sectionRef}>
       <div className="tt-head">
-        <h2 className="rule-h" id="timetable-h" style={{ margin: 0, flex: 1 }}>
+        <h2 className="rule-h" id="timetable-h" style={{ margin: 0 }}>
           Timetable
         </h2>
+        <button
+          type="button"
+          className="btn tt-toggle"
+          aria-expanded={open}
+          aria-controls={bodyId}
+          onClick={() => setOpenSaved(!open)}
+        >
+          {open ? 'Hide timetable' : showLabel} {chevron(open)}
+        </button>
       </div>
 
-      <div className="tt-days" role="group" aria-label="Choose a day">
-        <button type="button" className={`tt-day${day === 0 ? ' on' : ''}`} aria-pressed={day === 0} onClick={() => setDay(0)}>
+      <div className="seg" role="group" aria-label="Choose a day">
+        <button type="button" className="seg-btn" aria-pressed={day === 0} onClick={() => pickDay(0)}>
           Today
         </button>
-        <button type="button" className={`tt-day${day === 1 ? ' on' : ''}`} aria-pressed={day === 1} onClick={() => setDay(1)}>
+        <button type="button" className="seg-btn" aria-pressed={day === 1} onClick={() => pickDay(1)}>
           Tomorrow
         </button>
-        <label className="tt-more">
+        <label className={`seg-sel${day >= 2 ? ' on' : ''}`}>
           <span className="sr-only">Another day</span>
-          <select value={day >= 2 ? String(day) : ''} onChange={(e) => e.target.value && setDay(Number(e.target.value))}>
-            <option value="">Later…</option>
+          <select
+            value={day >= 2 ? String(day) : ''}
+            onChange={(e) => e.target.value && pickDay(Number(e.target.value))}
+          >
+            <option value="">{day >= 2 ? dayLabel(date) : 'Later…'}</option>
             {dates.slice(2).map((d, i) => (
               <option key={d} value={i + 2}>
                 {dayLabel(d)}
               </option>
             ))}
           </select>
+          <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
+            <path d="M2 4l4 4 4-4" stroke="currentColor" strokeWidth="2" fill="none" />
+          </svg>
         </label>
       </div>
 
       <p className="tt-sched">
-        <strong>{isToday ? 'Today' : day === 1 ? 'Tomorrow' : dayLabel(date)}</strong>
-        {info ? `${day < 2 ? ` · ${dayLabel(info.date)}` : ''} · ${info.label}` : ''}
+        <strong>{day === 0 ? 'Today' : day === 1 ? 'Tomorrow' : 'On'}</strong>
+        {info ? <span>{dayLabel(info.date)}</span> : null}
+        {info ? <span>{info.label}</span> : null}
         {info?.exception ? <span className="tt-exc">{info.exception}</span> : null}
       </p>
 
-      {isToday && (
-        <button type="button" className="btn tt-toggle" aria-expanded={open} onClick={toggle}>
-          {open
-            ? 'Hide the timetable'
-            : remaining.length > 0
-              ? `Show all ${remaining.length} remaining ${remaining.length === 1 ? 'train' : 'trains'} today`
-              : 'Show today’s timetable'}
-        </button>
-      )}
-
-      {expanded &&
-        (data === undefined || data === null ? (
-          <div className="skeleton" style={{ height: 120 }} aria-label="Loading timetable" />
-        ) : data === 'error' ? (
-          <p className="hint">The timetable for this day could not be loaded.</p>
-        ) : info?.beyondFeed ? (
-          <p className="hint">The timetable for {dayLabel(date)} isn’t published yet.</p>
-        ) : isToday ? (
-          remaining.length > 0 ? (
-            <Rows trains={remaining} nextKey={nextKey} />
+      <div id={bodyId} hidden={!expanded}>
+        {expanded &&
+          (data === undefined || data === null ? (
+            <div className="skeleton" style={{ height: 120 }} aria-label="Loading timetable" />
+          ) : data === 'error' ? (
+            <p className="hint">The timetable for this day could not be loaded.</p>
+          ) : info?.beyondFeed ? (
+            <p className="hint">The timetable for {dayLabel(date)} isn’t published yet.</p>
+          ) : isToday ? (
+            remaining.length > 0 ? (
+              <Block trains={remaining} live nextKey={nextKey} />
+            ) : (
+              <div>
+                <p className="tt-none">No more trains today.</p>
+                {today && today.nextDay.trains.length > 0 && (
+                  <>
+                    <p className="tt-sched">
+                      <strong>{today.nextDay.info.weekdayName}’s first trains</strong>
+                    </p>
+                    <Block trains={today.nextDay.trains} live={false} />
+                  </>
+                )}
+              </div>
+            )
+          ) : 'trains' in data && data.trains.length > 0 ? (
+            <Block trains={data.trains} live={false} />
           ) : (
-            <div>
-              <p className="tt-none">No more trains today.</p>
-              {today && today.nextDay.trains.length > 0 && (
-                <>
-                  <p className="tt-sched">{today.nextDay.info.weekdayName}’s first trains</p>
-                  <Rows trains={today.nextDay.trains} />
-                </>
-              )}
-            </div>
-          )
-        ) : 'trains' in data && data.trains.length > 0 ? (
-          <Rows trains={data.trains} />
-        ) : (
-          <p className="hint">No trains run between these stations on {dayLabel(date)}.</p>
-        ))}
+            <p className="hint">No trains run between these stations on {dayLabel(date)}.</p>
+          ))}
+        {expanded && (
+          <button
+            type="button"
+            className="btn tt-hide-bottom"
+            aria-controls={bodyId}
+            aria-expanded
+            onClick={collapseFromBottom}
+          >
+            Hide timetable {chevron(true)}
+          </button>
+        )}
+      </div>
 
       <p className="tt-links">
         {boardHref && <a href={boardHref(date)}>Full board: every train, every station &rarr;</a>}
