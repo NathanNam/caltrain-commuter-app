@@ -8,6 +8,7 @@ import {
   TOKEN_STYLE,
   isLineStation,
   lineStations,
+  initialRoute,
   loadLastRoute,
   nearestLineStation,
   plainName,
@@ -63,18 +64,21 @@ export default function CommuterBoard() {
   const [timetableEnd, setTimetableEnd] = useState<string | null>(null);
   const [liveTrains, setLiveTrains] = useState<LiveTrain[]>([]);
 
-  // Route from the link first, then the remembered route.
+  const [isDefaultRoute, setIsDefaultRoute] = useState(false);
+
+  // Route from the link first, then the remembered route, then the default
+  // (the default is not written anywhere until the visitor picks a route).
   useEffect(() => {
-    const route = readRouteFromUrl() ?? loadLastRoute();
-    if (route) {
-      setOriginId(route.from);
-      setDestinationId(route.to);
-      writeRouteToUrl(route.from, route.to);
-    }
+    const route = initialRoute(readRouteFromUrl(), loadLastRoute());
+    setOriginId(route.from);
+    setDestinationId(route.to);
+    setIsDefaultRoute(route.isDefault);
+    if (!route.isDefault) writeRouteToUrl(route.from, route.to);
     setReady(true);
   }, []);
 
   const changeRoute = useCallback((from: string, to: string) => {
+    setIsDefaultRoute(false);
     setOriginId(from);
     setDestinationId(to);
     saveLastRoute(from, to);
@@ -159,7 +163,7 @@ export default function CommuterBoard() {
 
   const boardHref = (day?: string) => {
     const q = new URLSearchParams();
-    if (hasRoute) {
+    if (hasRoute && !isDefaultRoute) {
       q.set('from', originId);
       q.set('to', destinationId);
     }
@@ -203,6 +207,7 @@ export default function CommuterBoard() {
           destinationId={hasRoute ? destinationId : ''}
           onChange={changeRoute}
           forceOpen={!hasRoute}
+          isDefault={isDefaultRoute}
         />
       )}
 

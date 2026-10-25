@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { stations } from '@/lib/stations';
 import { TrainType } from '@/lib/types';
-import { isLineStation, plainName } from '@/lib/board';
+import { initialRoute, isLineStation, loadLastRoute, plainName } from '@/lib/board';
 import { parseIsoDate } from '@/lib/service-day';
 import ThemeToggle from './ThemeToggle';
 import { CALTRAIN_TIMETABLE_URL, TYPE_TAG, dayLabel, upcomingServiceDates } from '@/lib/schedule-ui';
@@ -63,12 +63,17 @@ export default function FullBoard() {
   const [boards, setBoards] = useState<Record<string, BoardData | 'error'>>({});
   const scroller = useRef<HTMLDivElement>(null);
   const [ready, setReady] = useState(false);
+  const [routeIsDefault, setRouteIsDefault] = useState(false);
 
   // Route, day and direction from the link.
   useEffect(() => {
     const p = readParams();
-    const f = isLineStation(p.from) ? p.from : null;
-    const t = isLineStation(p.to) ? p.to : null;
+    // Route for the highlighted rows: the link, then the remembered route, then the default.
+    const linked = isLineStation(p.from) && isLineStation(p.to) && p.from !== p.to ? { from: p.from, to: p.to } : null;
+    const route = initialRoute(linked, loadLastRoute());
+    const f = route.from;
+    const t = route.to;
+    setRouteIsDefault(route.isDefault);
     setFrom(f);
     setTo(t);
     const idx = p.day && parseIsoDate(p.day) ? dates.indexOf(p.day) : -1;
@@ -92,15 +97,16 @@ export default function FullBoard() {
     if (!ready) return;
     try {
       const url = new URL(window.location.href);
-      if (from) url.searchParams.set('from', from);
-      if (to) url.searchParams.set('to', to);
+      // The default route is not written into the link.
+      if (from && !routeIsDefault) url.searchParams.set('from', from);
+      if (to && !routeIsDefault) url.searchParams.set('to', to);
       url.searchParams.set('day', date);
       url.searchParams.set('dir', dir);
       window.history.replaceState(null, '', url.toString());
     } catch {
       // ignore
     }
-  }, [ready, from, to, date, dir]);
+  }, [ready, from, to, date, dir, routeIsDefault]);
 
   useEffect(() => {
     if (boards[date]) return;
@@ -149,7 +155,7 @@ export default function FullBoard() {
     else if (scroller.current) scroller.current.scrollLeft = 0;
   }, [isToday, data, dir]);
 
-  const backHref = from && to ? `/?from=${from}&to=${to}` : '/';
+  const backHref = from && to && !routeIsDefault ? `/?from=${from}&to=${to}` : '/';
 
   return (
     <div className="wrap">
