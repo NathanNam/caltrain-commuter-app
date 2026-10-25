@@ -1,7 +1,7 @@
-agency_id,fare_id,price,currency_type,payment_method,transfers,transfer_duration
-1000,3525,4.00,USD,1,,14400
-1000,3526,6.25,USD,1,,14400
-1000,3527,8.50,USD,1,,14400
-1000,3528,10.75,USD,1,,14400
-1000,3529,13.00,USD,1,,14400
-1000,3530,15.25,USD,1,,14400
+fare_id,price,currency_type,payment_method,transfers,transfer_duration
+464227,15.25,USD,1,,14400
+464226,13.00,USD,1,,14400
+464225,10.75,USD,1,,14400
+464224,8.50,USD,1,,14400
+464223,6.25,USD,1,,14400
+464222,4.00,USD,1,,14400
