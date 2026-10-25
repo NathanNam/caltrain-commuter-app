@@ -19,6 +19,10 @@ const TRIP_GREEN = '#6fae4b';
 const NORTH = '#1f4e9c';
 const SOUTH = '#c8202e';
 
+// maplibre-gl 6 looks for its worker next to its own module file, which the
+// bundler moves; serve it from public/ instead (see scripts/copy-maplibre-worker.mjs).
+const WORKER_URL = `/maplibre-gl-worker.mjs?v=${maplibregl.getVersion()}`;
+
 function escapeHtml(s: string): string {
   return s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
 }
@@ -46,6 +50,10 @@ export default function TrainMap({ originId, destinationId, trains }: TrainMapPr
 
     const markers = trainMarkers.current;
     const els = stationEls.current;
+
+    if (maplibregl.getWorkerUrl() !== WORKER_URL) {
+      maplibregl.setWorkerUrl(WORKER_URL);
+    }
 
     map.current = new maplibregl.Map({
       container: mapContainer.current,
