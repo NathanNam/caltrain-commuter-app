@@ -246,9 +246,13 @@ interface StripProps extends LineStripProps {
 function Strip({ lo, hi, originIdx, destIdx, tripMinutes, tokens, aria }: StripProps) {
   const horizontal = false;
   const R = 25;
-  const LANE = 190 + 1.5 * R + R + 18; // first token column, right of the hexes
-  const RIGHT_LABEL = LANE + 2 * 30 + 4; // right-hand names start past two token columns
-  const pts: Pt[] = lineStations.map((_, i) => ({ x: 190 + (i % 2) * 1.5 * R, y: 30 + i * ((S3 * R) / 2) + R }));
+  // Left hex column. Wide enough on its left for a FROM/TO tag plus the longest name in bold
+  // ("South San Francisco"), since all names sit on the left.
+  const X0 = 220;
+  const LANE = X0 + 1.5 * R + R + 18; // first token column, right of the hexes
+  const pts: Pt[] = lineStations.map((_, i) => ({ x: X0 + (i % 2) * 1.5 * R, y: 30 + i * ((S3 * R) / 2) + R }));
+  // Names end left of the left hex column on every row, so the zigzag's right-hand hexes never cover them.
+  const NAME_END = X0 - R - 10;
   const last = pts[pts.length - 1];
   const W = 600;
   const H = Math.round(last.y + 50);
@@ -299,7 +303,6 @@ function Strip({ lo, hi, originIdx, destIdx, tripMinutes, tokens, aria }: StripP
         const city = CITY_IDS.has(st.id) || isEnd;
         const mins = circleMinutes(i);
         const name = plainName(st);
-        const left = i % 2 === 0;
         return (
           <g key={`s${i}`}>
             {city ? (
@@ -315,9 +318,11 @@ function Strip({ lo, hi, originIdx, destIdx, tripMinutes, tokens, aria }: StripP
               <circle cx={p.x} cy={p.y} r={5} className="town" data-station={i} data-y={p.y} />
             )}
             <text
-              x={left ? p.x - R - 10 : RIGHT_LABEL}
+              // Every name on the left, as on phones: the whole right side is the train lane, so a
+              // busy station's trains never run into a name (Nathan, Oct 28: 22nd Street).
+              x={NAME_END}
               y={p.y + 4}
-              textAnchor={left ? 'end' : 'start'}
+              textAnchor="end"
               data-station={i}
               data-y={p.y}
               className={`stn${isEnd ? ' end' : ''}`}
@@ -334,10 +339,10 @@ function Strip({ lo, hi, originIdx, destIdx, tripMinutes, tokens, aria }: StripP
         ] as const
       ).map(([i, l]) => {
         const p = pts[i];
-        // Under the station name, on the label's side, clear of tokens.
-        const left = i % 2 === 0;
-        const x = left ? p.x - R - 10 - 34 : RIGHT_LABEL;
-        const y = p.y + 8;
+        // FROM / TO at the far left on the station's own line (as on phones): rows are too close
+        // for a tag under the name without touching the next station.
+        const x = 2;
+        const y = p.y - 7;
         return (
           <g key={l} aria-hidden="true">
             <rect x={x} y={y} width={34} height={14} rx={2} className="end-tag" />
