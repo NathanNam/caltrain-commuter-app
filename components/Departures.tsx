@@ -31,6 +31,7 @@ function livePositionText(train: Train, liveFeed: boolean): string {
       : 'Live train positions are not available right now';
   }
   const near = lineStations[nearestLineStation(pos.latitude, pos.longitude)];
+  if (pos.notDeparted) return `Train ${train.trainNumber} is at ${plainName(near)}, not yet departed (live position)`;
   const verb = pos.currentStatus === 'STOPPED_AT' ? 'is at' : 'is near';
   return `Train ${train.trainNumber} ${verb} ${plainName(near)} (live position)`;
 }

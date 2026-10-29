@@ -50,6 +50,8 @@ export interface Train {
     speed?: number; // Speed in meters per second
     currentStatus?: 'INCOMING_AT' | 'STOPPED_AT' | 'IN_TRANSIT_TO';
     timestamp: number; // Unix timestamp when position was recorded
+    /** At the trip's first stop: waiting to leave (or held), so not a sign of running late. */
+    notDeparted?: boolean;
   };
 }
 

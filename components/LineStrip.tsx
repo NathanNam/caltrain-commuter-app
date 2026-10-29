@@ -143,7 +143,10 @@ function PhoneStrip({ first, last, lo, hi, originIdx, destIdx, tripMinutes, toke
   const shown = placeTokens(
     tokens.filter((t) => t.idx >= first && t.idx <= last),
     (t) => pts.get(t.idx)!.y,
-    LANE
+    LANE,
+    TOKEN_STEP,
+    undefined,
+    laneSlots(W, LANE)
   );
 
   return (
@@ -215,7 +218,8 @@ function PhoneStrip({ first, last, lo, hi, originIdx, destIdx, tripMinutes, toke
           </g>
         );
       })}
-      {shown.map(({ t, x, y }) => {
+      {shown.map(({ t, x, y, more }) => {
+        if (more) return <MoreGlyph key={`more-${t.label}`} station={t.idx} cx={x} cy={y} trains={more} />;
         return (
           <TokenGlyph
             key={`tok-${t.label}`}
@@ -346,8 +350,14 @@ function Strip({ lo, hi, originIdx, destIdx, tripMinutes, tokens, aria }: StripP
       {placeTokens(
         tokens.filter((t) => pts[t.idx]),
         (t) => pts[t.idx].y,
-        LANE
-      ).map(({ t, x, y }) => (
+        LANE,
+        TOKEN_STEP,
+        undefined,
+        laneSlots(W, LANE)
+      ).map(({ t, x, y, more }) =>
+        more ? (
+          <MoreGlyph key={`more-${t.label}`} station={t.idx} cx={x} cy={y} trains={more} />
+        ) : (
         <TokenGlyph
           key={`tok-${t.label}`}
           station={t.idx}
@@ -358,8 +368,30 @@ function Strip({ lo, hi, originIdx, destIdx, tripMinutes, tokens, aria }: StripP
           mine={t.mine}
           label={t.label}
         />
-      ))}
+        )
+      )}
     </svg>
+  );
+}
+
+/** Horizontal distance between token slots in the lane. */
+const TOKEN_STEP = 30;
+
+/** Token slots that fit between the lane and the right edge (radius 12 + rim), so none is clipped. */
+export function laneSlots(width: number, laneX: number, r = 12): number {
+  return Math.max(1, Math.floor((width - laneX - r - 2) / TOKEN_STEP) + 1);
+}
+
+/** "+N" in the last slot of a crowded row: the trains it stands for are in its tooltip. */
+function MoreGlyph({ cx, cy, trains, station, r = 12 }: { cx: number; cy: number; trains: LiveToken[]; station: number; r?: number }) {
+  return (
+    <g data-station={station} data-y={cy} data-more={trains.length}>
+      <title>{`Also here: ${trains.map((t) => `${t.label} (${t.direction.toLowerCase()})`).join(', ')}`}</title>
+      <circle cx={cx} cy={cy} r={r} className="train-more" />
+      <text x={cx} y={cy + 3.5} textAnchor="middle" className="train-more-t">
+        +{trains.length}
+      </text>
+    </g>
   );
 }
 

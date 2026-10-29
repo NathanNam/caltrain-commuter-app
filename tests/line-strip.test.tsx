@@ -122,3 +122,35 @@ describe('line strip layout: every row lines up', () => {
     expect(visibleRange(idx('diridon'), LAST, false)).toEqual({ first: idx('diridon') - 2, last: LAST });
   });
 });
+
+describe('line strip: many trains at one station', () => {
+  // Oct 28, 5:35 PM: 816, 822, 149, 523 and a 4xx all reported at San Jose Diridon.
+  const crowd: LiveToken[] = ['816', '822', '149', '523', '421', '427'].map((label, k) => ({
+    idx: idx('diridon'),
+    label,
+    direction: k < 2 ? 'Southbound' : 'Northbound',
+    mine: label === '421',
+  }));
+
+  it('keeps every token and "+N" marker inside the drawing on phone and desktop', () => {
+    const html = renderToStaticMarkup(
+      <LineStrip originIdx={idx('sm')} destIdx={idx('22nd')} tripMinutes={24} tokens={crowd} initialWhole />
+    );
+    const svgs = html.split('<svg').slice(1).filter((s) => s.includes('role="img"'));
+    expect(svgs).toHaveLength(2);
+    for (const svg of svgs) {
+      // The svg scales with its box (width 100%), so fitting the viewBox means no clipping at any screen width.
+      const width = Number(/viewBox="0 0 ([\d.]+) /.exec(svg)![1]);
+      const circles = [...svg.matchAll(/<circle cx="([\d.]+)"[^>]*class="train-(tok|more)"/g)];
+      expect(circles.length).toBeGreaterThan(0);
+      for (const c of circles) expect(Number(c[1]) + 12 + 2).toBeLessThanOrEqual(width);
+      const tokens = [...svg.matchAll(/data-token="(\w+)"/g)].map((m) => m[1]);
+      const more = Number(/data-more="(\d+)"/.exec(svg)?.[1] ?? 0);
+      // every train is drawn or counted, and the rider's train is drawn
+      expect(tokens.length + more).toBe(crowd.length);
+      expect(tokens).toContain('421');
+    }
+    // the phone strip (360 wide) has room for four slots: three trains and "+3"
+    expect(/data-more="(\d+)"/.exec(svgs[0])?.[1]).toBe('3');
+  });
+});

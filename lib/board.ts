@@ -178,24 +178,49 @@ export interface LiveToken {
  * vertically, so tokens and their pointers never overlap each other, and the
  * lane itself keeps them off the station circles. South before north at a
  * station, so directions keep a consistent order.
+ *
+ * At most `maxSlots` slots are used, so a crowded station never runs past the
+ * edge of the drawing: when a row needs more, its last slot becomes a "+N"
+ * marker whose `more` lists the trains it stands for (trains on the rider's
+ * route are kept as tokens where possible).
  */
 export function placeTokens<T extends LiveToken>(
   tokens: T[],
   yOf: (t: T) => number,
   laneX: number,
   step = 30,
-  minDy = 44
-): { t: T; x: number; y: number }[] {
+  minDy = 44,
+  maxSlots = Infinity
+): { t: T; x: number; y: number; more?: T[] }[] {
   const sorted = [...tokens].sort(
     (a, b) => yOf(a) - yOf(b) || (a.direction === b.direction ? 0 : a.direction === 'Southbound' ? -1 : 1)
   );
-  const placed: { t: T; x: number; y: number; slot: number }[] = [];
+  const placed: { t: T; x: number; y: number; slot: number; more?: T[] }[] = [];
   for (const t of sorted) {
     const y = yOf(t);
     let slot = 0;
     while (placed.some((p) => p.slot === slot && Math.abs(p.y - y) < minDy)) slot++;
     placed.push({ t, x: laneX + slot * step, y, slot });
   }
-  return placed;
-}
+  if (!placed.some((p) => p.slot >= maxSlots)) return placed;
 
+  // Fold every token past the last slot into the nearest token in the last slot.
+  const lastSlot = Math.max(0, maxSlots - 1);
+  const keep = placed.filter((p) => p.slot < maxSlots);
+  for (const p of placed.filter((q) => q.slot >= maxSlots)) {
+    const host = keep
+      .filter((q) => q.slot === lastSlot)
+      .sort((a, b) => Math.abs(a.y - p.y) - Math.abs(b.y - p.y))[0];
+    host.more = [...(host.more ?? [host.t]), p.t];
+  }
+  // A train on the rider's route swaps out of a "+N" for a visible train nearby.
+  for (const host of keep.filter((p) => p.more)) {
+    for (const mine of host.more!.filter((t) => t.mine)) {
+      const swap = keep.find((q) => !q.more && !q.t.mine && Math.abs(q.y - host.y) < minDy);
+      if (!swap) continue;
+      host.more = host.more!.map((t) => (t === mine ? swap.t : t));
+      swap.t = mine;
+    }
+  }
+  return keep;
+}
