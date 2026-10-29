@@ -2,7 +2,7 @@ import { Station, Train } from '@/lib/types';
 import { formatTime, formatDuration } from '@/lib/utils';
 import { addDays, yyyymmdd } from '@/lib/pacific-time';
 import { currentServiceDate, WEEKDAY_NAMES } from '@/lib/service-day';
-import { countdown, lineStations, minutesUntil, nearestLineStation, plainName } from '@/lib/board';
+import { countdown, lineStations, minutesUntilTrain, nearestLineStation, plainName } from '@/lib/board';
 import { CHARTER_COLOR, CharterBadge, StatusChip } from './TrainBadges';
 
 function departsFrom(station: Station): string {
@@ -31,6 +31,7 @@ function livePositionText(train: Train, liveFeed: boolean): string {
       : 'Live train positions are not available right now';
   }
   const near = lineStations[nearestLineStation(pos.latitude, pos.longitude)];
+  if (pos.notDeparted) return `Train ${train.trainNumber} is at ${plainName(near)}, not yet departed (live position)`;
   const verb = pos.currentStatus === 'STOPPED_AT' ? 'is at' : 'is near';
   return `Train ${train.trainNumber} ${verb} ${plainName(near)} (live position)`;
 }
@@ -46,7 +47,7 @@ interface HeroProps {
 
 /** The black "N MIN" block plus the next train's time, type and status. */
 export function NextTrainHero({ train, origin, destination, now, liveFeed }: HeroProps) {
-  const mins = minutesUntil(train.departureTime, now);
+  const mins = minutesUntilTrain(train, now);
   const cd = countdown(mins);
   const live = livePositionText(train, liveFeed);
   const laterDay = dayWord(train, now);
@@ -98,7 +99,7 @@ export function DepartureList({ trains, now }: ListProps) {
   return (
     <ol className="rows">
       {trains.map((train, i) => {
-        const mins = minutesUntil(train.departureTime, now);
+        const mins = minutesUntilTrain(train, now);
         const cd = countdown(mins);
         const cancelled = train.status === 'cancelled';
         return (

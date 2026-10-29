@@ -1535,6 +1535,19 @@ html.dark .train-tip {
   fill: #fff;
   font: 800 9px var(--font-sans), sans-serif;
 }
+.train-more {
+  fill: var(--card);
+  stroke: #1b1a17;
+  stroke-width: 2;
+  stroke-dasharray: 3 2;
+}
+html.dark .train-more {
+  stroke: var(--ink);
+}
+.train-more-t {
+  fill: var(--ink);
+  font: 800 9px var(--font-sans), sans-serif;
+}
 
 .legend {
   display: flex;

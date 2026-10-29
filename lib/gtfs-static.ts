@@ -204,6 +204,8 @@ export interface ScheduledTrain extends Train {
   /** GTFS stop_id and sequence of the boarding stop, for live predictions. */
   originStopId: string;
   originSequence: number;
+  /** Start of the trip's service day (ms), the zero point of its stop_times. */
+  dayStartMs: number;
 }
 
 export type { ServiceDate } from './service-day';
@@ -248,6 +250,7 @@ export function tripsOnServiceDay(
       serviceDate: dateStr,
       originStopId: from.stopId,
       originSequence: from.sequence,
+      dayStartMs,
       direction: southbound ? 'Southbound' : 'Northbound',
       departureTime: new Date(depMs).toISOString(),
       arrivalTime: new Date(arrMs).toISOString(),

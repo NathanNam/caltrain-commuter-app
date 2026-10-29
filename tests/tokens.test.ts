@@ -45,3 +45,33 @@ describe('token placement in the lane', () => {
     expect(atSF.map((p) => p.t.direction)).toEqual(['Southbound', 'Northbound']);
   });
 });
+
+describe('a crowded station never runs off the edge', () => {
+  const tok = (label: string, direction: LiveToken['direction'], mine = false): LiveToken => ({ label, idx: 24, direction, mine });
+  // Oct 28, 5:35 PM: five trains reported at San Jose Diridon at once.
+  const diridon = [tok('816', 'Southbound'), tok('822', 'Southbound'), tok('149', 'Northbound'), tok('523', 'Northbound'), tok('421', 'Northbound')];
+
+  it('uses at most maxSlots slots and folds the rest into a "+N" marker', () => {
+    const placed = placeTokens(diridon, () => 100, 250, 30, 44, 4);
+    expect(placed).toHaveLength(4);
+    expect(Math.max(...placed.map((p) => p.x))).toBe(250 + 3 * 30);
+    const more = placed.filter((p) => p.more);
+    expect(more).toHaveLength(1);
+    expect(more[0].more!.map((t) => t.label).sort()).toEqual(['421', '523']);
+    // every train is either a token or counted in the marker
+    const shown = placed.filter((p) => !p.more).map((p) => p.t.label);
+    expect([...shown, ...more[0].more!.map((t) => t.label)].sort()).toEqual(diridon.map((t) => t.label).sort());
+  });
+
+  it("keeps the rider's own train as a token, not inside the marker", () => {
+    const mine = diridon.map((t) => (t.label === '421' ? { ...t, mine: true } : t));
+    const placed = placeTokens(mine, () => 100, 250, 30, 44, 4);
+    expect(placed.some((p) => !p.more && p.t.label === '421')).toBe(true);
+    expect(placed.find((p) => p.more)!.more!.some((t) => t.label === '421')).toBe(false);
+  });
+
+  it('changes nothing when every token fits', () => {
+    const two = diridon.slice(0, 2);
+    expect(placeTokens(two, () => 100, 250, 30, 44, 4)).toEqual(placeTokens(two, () => 100, 250));
+  });
+});

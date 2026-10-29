@@ -143,7 +143,10 @@ function PhoneStrip({ first, last, lo, hi, originIdx, destIdx, tripMinutes, toke
   const shown = placeTokens(
     tokens.filter((t) => t.idx >= first && t.idx <= last),
     (t) => pts.get(t.idx)!.y,
-    LANE
+    LANE,
+    TOKEN_STEP,
+    undefined,
+    laneSlots(W, LANE)
   );
 
   return (
@@ -215,7 +218,8 @@ function PhoneStrip({ first, last, lo, hi, originIdx, destIdx, tripMinutes, toke
           </g>
         );
       })}
-      {shown.map(({ t, x, y }) => {
+      {shown.map(({ t, x, y, more }) => {
+        if (more) return <MoreGlyph key={`more-${t.label}`} station={t.idx} cx={x} cy={y} trains={more} />;
         return (
           <TokenGlyph
             key={`tok-${t.label}`}
@@ -242,9 +246,13 @@ interface StripProps extends LineStripProps {
 function Strip({ lo, hi, originIdx, destIdx, tripMinutes, tokens, aria }: StripProps) {
   const horizontal = false;
   const R = 25;
-  const LANE = 190 + 1.5 * R + R + 18; // first token column, right of the hexes
-  const RIGHT_LABEL = LANE + 2 * 30 + 4; // right-hand names start past two token columns
-  const pts: Pt[] = lineStations.map((_, i) => ({ x: 190 + (i % 2) * 1.5 * R, y: 30 + i * ((S3 * R) / 2) + R }));
+  // Left hex column. Wide enough on its left for a FROM/TO tag plus the longest name in bold
+  // ("South San Francisco"), since all names sit on the left.
+  const X0 = 220;
+  const LANE = X0 + 1.5 * R + R + 18; // first token column, right of the hexes
+  const pts: Pt[] = lineStations.map((_, i) => ({ x: X0 + (i % 2) * 1.5 * R, y: 30 + i * ((S3 * R) / 2) + R }));
+  // Names end left of the left hex column on every row, so the zigzag's right-hand hexes never cover them.
+  const NAME_END = X0 - R - 10;
   const last = pts[pts.length - 1];
   const W = 600;
   const H = Math.round(last.y + 50);
@@ -295,7 +303,6 @@ function Strip({ lo, hi, originIdx, destIdx, tripMinutes, tokens, aria }: StripP
         const city = CITY_IDS.has(st.id) || isEnd;
         const mins = circleMinutes(i);
         const name = plainName(st);
-        const left = i % 2 === 0;
         return (
           <g key={`s${i}`}>
             {city ? (
@@ -311,9 +318,11 @@ function Strip({ lo, hi, originIdx, destIdx, tripMinutes, tokens, aria }: StripP
               <circle cx={p.x} cy={p.y} r={5} className="town" data-station={i} data-y={p.y} />
             )}
             <text
-              x={left ? p.x - R - 10 : RIGHT_LABEL}
+              // Every name on the left, as on phones: the whole right side is the train lane, so a
+              // busy station's trains never run into a name (Nathan, Oct 28: 22nd Street).
+              x={NAME_END}
               y={p.y + 4}
-              textAnchor={left ? 'end' : 'start'}
+              textAnchor="end"
               data-station={i}
               data-y={p.y}
               className={`stn${isEnd ? ' end' : ''}`}
@@ -330,10 +339,10 @@ function Strip({ lo, hi, originIdx, destIdx, tripMinutes, tokens, aria }: StripP
         ] as const
       ).map(([i, l]) => {
         const p = pts[i];
-        // Under the station name, on the label's side, clear of tokens.
-        const left = i % 2 === 0;
-        const x = left ? p.x - R - 10 - 34 : RIGHT_LABEL;
-        const y = p.y + 8;
+        // FROM / TO at the far left on the station's own line (as on phones): rows are too close
+        // for a tag under the name without touching the next station.
+        const x = 2;
+        const y = p.y - 7;
         return (
           <g key={l} aria-hidden="true">
             <rect x={x} y={y} width={34} height={14} rx={2} className="end-tag" />
@@ -346,8 +355,14 @@ function Strip({ lo, hi, originIdx, destIdx, tripMinutes, tokens, aria }: StripP
       {placeTokens(
         tokens.filter((t) => pts[t.idx]),
         (t) => pts[t.idx].y,
-        LANE
-      ).map(({ t, x, y }) => (
+        LANE,
+        TOKEN_STEP,
+        undefined,
+        laneSlots(W, LANE)
+      ).map(({ t, x, y, more }) =>
+        more ? (
+          <MoreGlyph key={`more-${t.label}`} station={t.idx} cx={x} cy={y} trains={more} />
+        ) : (
         <TokenGlyph
           key={`tok-${t.label}`}
           station={t.idx}
@@ -358,8 +373,30 @@ function Strip({ lo, hi, originIdx, destIdx, tripMinutes, tokens, aria }: StripP
           mine={t.mine}
           label={t.label}
         />
-      ))}
+        )
+      )}
     </svg>
+  );
+}
+
+/** Horizontal distance between token slots in the lane. */
+const TOKEN_STEP = 30;
+
+/** Token slots that fit between the lane and the right edge (radius 12 + rim), so none is clipped. */
+export function laneSlots(width: number, laneX: number, r = 12): number {
+  return Math.max(1, Math.floor((width - laneX - r - 2) / TOKEN_STEP) + 1);
+}
+
+/** "+N" in the last slot of a crowded row: the trains it stands for are in its tooltip. */
+function MoreGlyph({ cx, cy, trains, station, r = 12 }: { cx: number; cy: number; trains: LiveToken[]; station: number; r?: number }) {
+  return (
+    <g data-station={station} data-y={cy} data-more={trains.length}>
+      <title>{`Also here: ${trains.map((t) => `${t.label} (${t.direction.toLowerCase()})`).join(', ')}`}</title>
+      <circle cx={cx} cy={cy} r={r} className="train-more" />
+      <text x={cx} y={cy + 3.5} textAnchor="middle" className="train-more-t">
+        +{trains.length}
+      </text>
+    </g>
   );
 }
 

@@ -1,7 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { LiveTrain, Train } from '@/lib/types';
 import { getStationById } from '@/lib/stations';
-import { findTripUpdate, findVehicle, getRealtimeSnapshot, getStopDelay } from '@/lib/gtfs-realtime';
+import {
+  findTripUpdate,
+  findVehicle,
+  getRealtimeSnapshot,
+  getStopDelay,
+  isAtFirstStop,
+  isFreshPosition,
+} from '@/lib/gtfs-realtime';
 import { findTrips, getFeed, isFeedExpired, trainTypeFromRoute } from '@/lib/gtfs-static';
 
 const MAX_TRAINS = 5;
@@ -48,13 +55,15 @@ export async function GET(request: NextRequest) {
     };
     if (realtime.available) {
       const update = findTripUpdate(realtime.tripUpdates, trip.tripId, trip.serviceDate);
-      const live = update ? getStopDelay(update, trip.originStopId, trip.originSequence) : null;
+      const schedule = { stopTimes: feed.stopTimesByTrip.get(trip.tripId) ?? [], dayStartMs: trip.dayStartMs };
+      const live = update ? getStopDelay(update, trip.originStopId, trip.originSequence, schedule) : null;
       if (live) {
         train.delay = live.delay;
         train.status = live.status;
       }
+      // Only a fresh position is shown; an old or undated one is not "live".
       const vehicle = findVehicle(realtime.vehicles, trip.tripId, trip.serviceDate);
-      if (vehicle) {
+      if (vehicle && isFreshPosition(vehicle, now.getTime())) {
         train.vehiclePosition = {
           latitude: vehicle.latitude,
           longitude: vehicle.longitude,
@@ -62,6 +71,7 @@ export async function GET(request: NextRequest) {
           speed: vehicle.speed,
           currentStatus: vehicle.currentStatus,
           timestamp: vehicle.timestamp,
+          notDeparted: isAtFirstStop(vehicle, schedule.stopTimes) || undefined,
         };
       }
     }
@@ -80,7 +90,7 @@ export async function GET(request: NextRequest) {
   const liveTrains: LiveTrain[] = [];
   for (const v of realtime.vehicles) {
     const trip = feed.tripsById.get(v.tripId);
-    if (!trip) continue;
+    if (!trip || !isFreshPosition(v, now.getTime())) continue;
     liveTrains.push({
       trainNumber: trip.shortName,
       direction: trip.directionId === '0' ? 'Northbound' : 'Southbound',

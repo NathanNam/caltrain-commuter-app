@@ -5,6 +5,8 @@
 // number of open tabs stays far below 511's rate limit (60 requests/hour per
 // key by default).
 import GtfsRealtimeBindings from 'gtfs-realtime-bindings';
+import type { StopTime } from './gtfs-static';
+import { stations } from './stations';
 
 const CALTRAIN_AGENCY = 'CT';
 const API_BASE = 'https://api.511.org/transit';
@@ -19,6 +21,9 @@ export interface StopTimeUpdate {
   stopSequence?: number;
   arrivalDelay?: number; // seconds
   departureDelay?: number; // seconds
+  /** Predicted absolute times (Unix seconds); 511's Caltrain feed sends these instead of delays. */
+  arrivalTime?: number;
+  departureTime?: number;
   /** TripUpdate.StopTimeUpdate.ScheduleRelationship enum value. */
   scheduleRelationship: number;
 }
@@ -41,6 +46,7 @@ export interface VehiclePosition {
   bearing?: number;
   speed?: number;
   currentStatus?: 'INCOMING_AT' | 'STOPPED_AT' | 'IN_TRANSIT_TO';
+  /** Unix seconds the position was measured; 0 when the feed did not say. */
   timestamp: number;
 }
 
@@ -55,6 +61,15 @@ export interface RealtimeSnapshot {
 function toNumber(v: number | { toNumber(): number } | null | undefined): number | undefined {
   if (v == null) return undefined;
   return typeof v === 'number' ? v : v.toNumber();
+}
+
+/**
+ * Whether a decoded protobuf message actually carried a field. protobufjs puts
+ * defaults (0, '') on the prototype, so an absent `delay` reads as 0, not
+ * undefined, and `?? undefined` cannot tell the two apart.
+ */
+function has(message: object | null | undefined, field: string): boolean {
+  return message != null && Object.prototype.hasOwnProperty.call(message, field);
 }
 
 async function fetchFeed(kind: 'tripupdates' | 'vehiclepositions', apiKey: string) {
@@ -76,9 +91,11 @@ export function parseTripUpdates(feed: InstanceType<typeof rt.FeedMessage>): Tri
       scheduleRelationship: tu.trip.scheduleRelationship ?? TripRelationship.SCHEDULED,
       stopTimeUpdates: (tu.stopTimeUpdate || []).map((stu) => ({
         stopId: stu.stopId || '',
-        stopSequence: stu.stopSequence ?? undefined,
-        arrivalDelay: stu.arrival?.delay ?? undefined,
-        departureDelay: stu.departure?.delay ?? undefined,
+        stopSequence: has(stu, 'stopSequence') ? stu.stopSequence! : undefined,
+        arrivalDelay: has(stu.arrival, 'delay') ? stu.arrival!.delay! : undefined,
+        departureDelay: has(stu.departure, 'delay') ? stu.departure!.delay! : undefined,
+        arrivalTime: has(stu.arrival, 'time') ? toNumber(stu.arrival!.time) : undefined,
+        departureTime: has(stu.departure, 'time') ? toNumber(stu.departure!.time) : undefined,
         scheduleRelationship: stu.scheduleRelationship ?? StopRelationship.SCHEDULED,
       })),
     });
@@ -102,8 +119,8 @@ export function parseVehicles(feed: InstanceType<typeof rt.FeedMessage>): Vehicl
       longitude: pos.longitude,
       bearing: pos.bearing ?? undefined,
       speed: pos.speed ?? undefined,
-      currentStatus: v.currentStatus != null ? VEHICLE_STATUS[v.currentStatus] : undefined,
-      timestamp: toNumber(v.timestamp) ?? Math.floor(Date.now() / 1000),
+      currentStatus: has(v, 'currentStatus') ? VEHICLE_STATUS[v.currentStatus!] : undefined,
+      timestamp: has(v, 'timestamp') ? toNumber(v.timestamp) ?? 0 : 0,
     });
   }
   return out;
@@ -151,9 +168,55 @@ export function findVehicle(vehicles: VehiclePosition[], tripId: string, service
   );
 }
 
+/** Positions older than this, or without a timestamp, are not shown as live. */
+export const MAX_POSITION_AGE_MS = 5 * 60 * 1000;
+
+/** A position measured within MAX_POSITION_AGE_MS of now (and not from the future). */
+export function isFreshPosition(vehicle: VehiclePosition, nowMs: number): boolean {
+  if (!vehicle.timestamp) return false;
+  const age = nowMs - vehicle.timestamp * 1000;
+  return age <= MAX_POSITION_AGE_MS && age >= -60 * 1000;
+}
+
+/** How close (metres) a vehicle must be to its trip's first station to count as waiting there. */
+const AT_STATION_M = 500;
+
+/**
+ * True when the vehicle is sitting at its trip's first stop: either before the
+ * trip starts or held there. Such a position says nothing about running
+ * delay, so it is shown as "not yet departed", never turned into lateness.
+ */
+export function isAtFirstStop(vehicle: VehiclePosition, stopTimes: StopTime[]): boolean {
+  const first = stopTimes[0];
+  const station = first && stations.find((s) => s.gtfsStopIds.includes(first.stopId));
+  if (!station) return false;
+  const cos = Math.cos((vehicle.latitude * Math.PI) / 180);
+  const dx = (station.coordinates.lng - vehicle.longitude) * cos * 111320;
+  const dy = (station.coordinates.lat - vehicle.latitude) * 110540;
+  return Math.hypot(dx, dy) <= AT_STATION_M;
+}
+
 export interface LiveStatus {
   delay: number; // minutes
   status: 'on-time' | 'delayed' | 'cancelled';
+}
+
+/** The trip's static stop times and its service day start, to turn predicted times into delays. */
+export interface TripSchedule {
+  stopTimes: StopTime[];
+  dayStartMs: number;
+}
+
+/** Delay in seconds of one stop's update: its own delay, else predicted time minus scheduled time. */
+function updateDelaySeconds(s: StopTimeUpdate, schedule?: TripSchedule): number | undefined {
+  const delay = s.departureDelay ?? s.arrivalDelay;
+  if (delay != null) return delay;
+  const st = schedule?.stopTimes.find((t) => t.stopId === s.stopId);
+  if (!st || !schedule) return undefined;
+  const dayStart = schedule.dayStartMs / 1000;
+  if (s.departureTime != null) return s.departureTime - (dayStart + st.departureSecs);
+  if (s.arrivalTime != null) return s.arrivalTime - (dayStart + st.arrivalSecs);
+  return undefined;
 }
 
 /**
@@ -162,35 +225,42 @@ export interface LiveStatus {
  * - The origin stop SKIPPED -> cancelled (the train will not stop there).
  * - Otherwise the delay of the origin stop's update, or, per GTFS-RT
  *   propagation, of the nearest earlier stop on the trip that has one.
+ *   A stop's delay is its `delay` field or, when the feed only sends predicted
+ *   times (511's Caltrain feed does), the predicted time minus the scheduled
+ *   time from `schedule`. Stops without a stop_sequence in the feed take it
+ *   from the schedule.
  * Returns null when the feed has no prediction for the origin.
  */
 export function getStopDelay(
   update: TripUpdate,
   originStopId: string,
-  originSequence?: number
+  originSequence?: number,
+  schedule?: TripSchedule
 ): LiveStatus | null {
   if (update.scheduleRelationship === TripRelationship.CANCELED) return { delay: 0, status: 'cancelled' };
 
   const atOrigin = update.stopTimeUpdates.find((s) => s.stopId === originStopId);
   if (atOrigin?.scheduleRelationship === StopRelationship.SKIPPED) return { delay: 0, status: 'cancelled' };
 
-  let source: StopTimeUpdate | undefined =
-    atOrigin && atOrigin.scheduleRelationship !== StopRelationship.NO_DATA ? atOrigin : undefined;
+  const sequenceOf = (s: StopTimeUpdate) =>
+    s.stopSequence ?? schedule?.stopTimes.find((t) => t.stopId === s.stopId)?.sequence;
+  const usable = (s: StopTimeUpdate | undefined) =>
+    s && s.scheduleRelationship !== StopRelationship.NO_DATA && updateDelaySeconds(s, schedule) != null ? s : undefined;
+
+  let source: StopTimeUpdate | undefined = usable(atOrigin);
   if (!source && originSequence != null) {
     source = update.stopTimeUpdates
-      .filter(
-        (s) =>
-          s.stopSequence != null &&
-          s.stopSequence <= originSequence &&
-          s.scheduleRelationship === StopRelationship.SCHEDULED
-      )
-      .sort((a, b) => (b.stopSequence ?? 0) - (a.stopSequence ?? 0))[0];
+      .filter((s) => {
+        const seq = sequenceOf(s);
+        return seq != null && seq <= originSequence && s.scheduleRelationship === StopRelationship.SCHEDULED && usable(s);
+      })
+      .sort((a, b) => (sequenceOf(b) ?? 0) - (sequenceOf(a) ?? 0))[0];
   }
   if (!source) return null;
 
-  const seconds = source.departureDelay ?? source.arrivalDelay;
+  const seconds = updateDelaySeconds(source, schedule);
   if (seconds == null) return null;
-  const minutes = Math.round(seconds / 60);
+  const minutes = Math.round(seconds / 60) || 0; // never -0
   return { delay: minutes, status: minutes >= 1 ? 'delayed' : 'on-time' };
 }
 
