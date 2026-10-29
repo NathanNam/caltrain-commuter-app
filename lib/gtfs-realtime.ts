@@ -207,16 +207,20 @@ export interface TripSchedule {
   dayStartMs: number;
 }
 
-/** Delay in seconds of one stop's update: its own delay, else predicted time minus scheduled time. */
+/** Delay in seconds of one stop's update: its own delay, else predicted minus scheduled time (the middle of the predicted dwell when both times are given). */
 function updateDelaySeconds(s: StopTimeUpdate, schedule?: TripSchedule): number | undefined {
   const delay = s.departureDelay ?? s.arrivalDelay;
   if (delay != null) return delay;
   const st = schedule?.stopTimes.find((t) => t.stopId === s.stopId);
   if (!st || !schedule) return undefined;
   const dayStart = schedule.dayStartMs / 1000;
-  if (s.departureTime != null) return s.departureTime - (dayStart + st.departureSecs);
-  if (s.arrivalTime != null) return s.arrivalTime - (dayStart + st.arrivalSecs);
-  return undefined;
+  const dep = s.departureTime != null ? s.departureTime - (dayStart + st.departureSecs) : undefined;
+  const arr = s.arrivalTime != null ? s.arrivalTime - (dayStart + st.arrivalSecs) : undefined;
+  // 511 brackets each stop with a ~1-minute dwell around the timetable minute: arrival about 30 s
+  // early, departure about 30 s late, even for a train running exactly to time. The middle of the
+  // predicted dwell is the honest measure; departure alone reads every train as ~30 s late.
+  if (dep != null && arr != null) return (dep + arr) / 2;
+  return dep ?? arr;
 }
 
 /**
@@ -260,7 +264,8 @@ export function getStopDelay(
 
   const seconds = updateDelaySeconds(source, schedule);
   if (seconds == null) return null;
-  const minutes = Math.round(seconds / 60) || 0; // never -0
+  // Whole minutes behind, as platform signs count: "1 min late" only once a full minute late.
+  const minutes = Math.trunc(seconds / 60) || 0; // never -0
   return { delay: minutes, status: minutes >= 1 ? 'delayed' : 'on-time' };
 }
 
