@@ -135,8 +135,9 @@ describe("511's Caltrain feed: predicted times, no delay field", () => {
     expect(train.dayStartMs).toBe(schedule421.dayStartMs);
 
     const u = wire('421', [
-      ['70111', pt(17, 49), pt(17, 50)], // Hillsdale, scheduled 17:25
-      ['70091', pt(17, 52), pt(17, 53)], // San Mateo, scheduled 17:28
+      // 511's shape: arrival 30 s before and departure 30 s after the (late) minute.
+      ['70111', pt(17, 49, 30), pt(17, 50, 30)], // Hillsdale, scheduled 17:25
+      ['70091', pt(17, 52, 30), pt(17, 53, 30)], // San Mateo, scheduled 17:28
     ]);
     const live = getStopDelay(u, train.originStopId, train.originSequence, schedule421);
     expect(live).toEqual({ delay: 25, status: 'delayed' });
@@ -147,8 +148,8 @@ describe("511's Caltrain feed: predicted times, no delay field", () => {
 
   it('propagates a time-only delay from an earlier stop, ordering stops by the schedule', () => {
     const u = wire('421', [
-      ['70141', pt(17, 40), pt(17, 41)], // Redwood City (seq 10), scheduled 17:18 -> 23 late
-      ['70111', pt(17, 49), pt(17, 50)], // Hillsdale (seq 11), scheduled 17:25 -> 25 late
+      ['70141', pt(17, 40, 30), pt(17, 41, 30)], // Redwood City (seq 10), scheduled 17:18 -> 23 late
+      ['70111', pt(17, 49, 30), pt(17, 50, 30)], // Hillsdale (seq 11), scheduled 17:25 -> 25 late
     ]);
     expect(getStopDelay(u, '70091', 12, schedule421)).toEqual({ delay: 25, status: 'delayed' });
   });
@@ -160,7 +161,30 @@ describe("511's Caltrain feed: predicted times, no delay field", () => {
       ['70091', 1793234679, 1793234739],
       ['70061', 1793234979, 1793235039],
     ]);
-    expect(getStopDelay(u, '70091', 12, schedule421)).toEqual({ delay: 18, status: 'delayed' });
+    // Mid-dwell 17:45:09 against 17:28:00 is 17 min 9 s behind: 17 whole minutes.
+    expect(getStopDelay(u, '70091', 12, schedule421)).toEqual({ delay: 17, status: 'delayed' });
+  });
+
+  it('Oct 29 05:45 PT capture: a train running to time is on time, not "1 min late"', () => {
+    // 511 brackets the scheduled minute with a ~1 min dwell: 103 at San Mateo is scheduled
+    // 5:57:00 and predicted to arrive 5:56:36 and leave 5:57:36 (+35 s on departure alone).
+    const oct29 = { year: 2026, month: 10, day: 29 };
+    const sched103 = { stopTimes: feed.stopTimesByTrip.get('103')!, dayStartMs: serviceDayStartMs(oct29) };
+    const t = (h: number, m: number, sec = 0) => sched103.dayStartMs / 1000 + h * 3600 + m * 60 + sec;
+    const u103 = wire('103', [['70091', t(5, 56, 36), t(5, 57, 36)]]);
+    expect(getStopDelay(u103, '70091', undefined, sched103)).toEqual({ delay: 0, status: 'on-time' });
+    // 401: arrive 6:27:30, leave 6:28:30 around a scheduled 6:28:00.
+    const sched401 = { stopTimes: feed.stopTimesByTrip.get('401')!, dayStartMs: serviceDayStartMs(oct29) };
+    const u401 = wire('401', [['70091', t(6, 27, 30), t(6, 28, 30)]]);
+    expect(getStopDelay(u401, '70091', undefined, sched401)).toEqual({ delay: 0, status: 'on-time' });
+  });
+
+  it('counts whole minutes behind, like platform signs', () => {
+    // 59 s behind -> on time; 90 s behind -> 1 min late.
+    const almost = wire('421', [['70091', pt(17, 28, 29), pt(17, 29, 29)]]);
+    expect(getStopDelay(almost, '70091', 12, schedule421)).toEqual({ delay: 0, status: 'on-time' });
+    const late = wire('421', [['70091', pt(17, 29), pt(17, 30)]]);
+    expect(getStopDelay(late, '70091', 12, schedule421)).toEqual({ delay: 1, status: 'delayed' });
   });
 
   it('still reports on time when the predicted time matches the schedule', () => {
