@@ -36,3 +36,17 @@ describe('next train card, Oct 28 17:24 PT', () => {
     expect(html).toContain('Train 421 is at San Jose Diridon, not yet departed (live position)');
   });
 });
+
+describe('countdown counts to the expected departure', () => {
+  it('a train 25 min late at 17:24 shows 29 minutes, not 4', () => {
+    // Scheduled 17:28 + 25 min late = 17:53; from 17:24 that is 29 minutes.
+    const html = hero(train421);
+    expect(html).toContain('departs in 29 minutes');
+    expect(html).not.toContain('departs in 4 minutes');
+  });
+
+  it('an on-time train counts to its scheduled time', () => {
+    const html = hero({ ...train421, delay: 0, status: 'on-time' });
+    expect(html).toContain('departs in 4 minutes');
+  });
+});

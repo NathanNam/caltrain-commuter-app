@@ -4,17 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { LiveTrain, Train } from '@/lib/types';
 import { getStationById } from '@/lib/stations';
 import { formatTime } from '@/lib/utils';
-import {
-  TOKEN_STYLE,
-  isLineStation,
-  lineStations,
-  initialRoute,
-  loadLastRoute,
-  nearestLineStation,
-  plainName,
-  saveLastRoute,
-  tokenRim,
-} from '@/lib/board';
+import { TOKEN_STYLE, isLineStation, lineStations, initialRoute, loadLastRoute, nearestLineStation, plainName, saveLastRoute, tokenRim, expectedDepartureMs } from '@/lib/board';
 import RoutePicker from './RoutePicker';
 import ServiceAlerts from './ServiceAlerts';
 import WeatherWidget from './WeatherWidget';
@@ -147,7 +137,11 @@ export default function CommuterBoard() {
   const originIdx = lineStations.findIndex((s) => s.id === originId);
   const destIdx = lineStations.findIndex((s) => s.id === destinationId);
 
-  const upcoming = trains.filter((t) => new Date(t.departureTime).getTime() > now - 60000);
+  // Keep a late train until it is expected to leave, and order by expected departure so the
+  // hero shows the train that will actually leave next.
+  const upcoming = trains
+    .filter((t) => expectedDepartureMs(t) > now - 60000)
+    .sort((a, b) => expectedDepartureMs(a) - expectedDepartureMs(b));
   const next = upcoming.find((t) => t.status !== 'cancelled') ?? null;
   const later = upcoming.filter((t) => t !== next);
   // Every train reporting a position on the line, named by the API from its

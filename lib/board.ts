@@ -59,6 +59,22 @@ export function statusOf(train: Train): { kind: StatusKind; text: string } {
   return { kind: 'sched', text: 'Scheduled' };
 }
 
+/**
+ * When the train is expected to leave the rider's station: the scheduled departure plus any known
+ * lateness. Early running is ignored (Caltrain holds trains to the timetable), and cancelled trains
+ * keep their scheduled time.
+ */
+export function expectedDepartureMs(train: Train): number {
+  const scheduled = new Date(train.departureTime).getTime();
+  if (train.status === 'cancelled') return scheduled;
+  return scheduled + Math.max(0, train.delay ?? 0) * 60000;
+}
+
+/** Whole minutes from now until the expected departure (scheduled + known delay; never negative). */
+export function minutesUntilTrain(train: Train, now: number): number {
+  return Math.max(0, Math.round((expectedDepartureMs(train) - now) / 60000));
+}
+
 /** Whole minutes from now until the scheduled departure (never negative). */
 export function minutesUntil(iso: string, now: number): number {
   return Math.max(0, Math.round((new Date(iso).getTime() - now) / 60000));
